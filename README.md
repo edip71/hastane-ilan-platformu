@@ -42,14 +42,14 @@ cd hastane-ilan-platformu
 PostgreSQL üzerinde `hastane_ilan_db` adında bir veritabanı oluşturun.
 
 ### 3. Sunucu (Backend) Kurulumu
-`server` klasörüne geçip bağımlılıkları yükleyin ve `.env` dosyasını yapılandırın:
+`backend` klasörüne geçip bağımlılıkları yükleyin ve `.env` dosyasını yapılandırın:
 
 ```bash
-cd server
+cd backend
 npm install
 ```
 
-`server/.env` dosyanızı oluşturup veritabanı bilgilerinizi girin:
+`backend/.env` dosyanızı oluşturup veritabanı bilgilerinizi girin:
 ```env
 PORT=5000
 DB_HOST=localhost
@@ -66,13 +66,13 @@ npm run dev
 ```
 
 ### 4. İstemci (Frontend) Kurulumu
-Yeni bir terminalde `client` klasörüne geçip bağımlılıkları yükleyin ve başlatın:
+Yeni bir terminalde `frontend` klasörüne geçip bağımlılıkları yükleyin ve başlatın:
 
 ```bash
-cd client
+cd frontend
 npm install
 npm run dev
-# Web arayüzü http://localhost:3000 veya http://localhost:5173 adresinde açılır
+# Web arayüzü http://localhost:3000 adresinde açılır
 ```
 
 ---
@@ -81,16 +81,18 @@ npm run dev
 
 ```text
 hastane-ilan-platformu/
-├── client/                     # React + Vite Arayüz Uygulaması
+├── frontend/                   # React + Vite + React-Router Arayüz Uygulaması
 │   ├── src/
-│   │   ├── App.jsx             # Ana Uygulama ve Form Ekranları
-│   │   └── main.jsx            # React Giriş Noktası
+│   │   ├── components/         # Ortak Bileşenler (Navbar vb.)
+│   │   ├── pages/              # Sayfalar (LoginPage, RegisterPage, AdminUsersPage...)
+│   │   ├── App.jsx             # React Rota (Route) Yapısı
+│   │   └── main.jsx
 │   └── package.json
-├── server/                     # Node.js + Express REST API
+├── backend/                    # Node.js + Express REST API
 │   ├── index.js                # API Rotaları, DB Bağlantısı ve Güvenlik Katmanı
 │   └── package.json
-├── Hastane_Ilan_Platformu_Mimari_Kararlari.md # Sistem Tasarımı ve Mimari Kararlar
-├── staj_program.pdf            # Stajyer Uygulama Kılavuzu & Fonksiyonel Akış
+├── Hastane_Ilan_Platformu_Mimari_Kararlari.md
+├── staj_program.pdf
 └── README.md
 ```
 
