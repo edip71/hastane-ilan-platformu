@@ -5,12 +5,16 @@ import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
+import helmet from 'helmet';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'hastane_varsayilan_yedek_gizli_anahtar';
+
+// Güvenlik: HTTP Header Zırhı (Helmet) - XSS, clickjacking ve MIME sniffing engeli
+app.use(helmet());
 
 // Güvenlik: Giriş denemeleri için sıkı Kaba Kuvvet (Brute-Force) sınırlaması (15 dakikada maks 10 deneme)
 const loginLimiter = rateLimit({
