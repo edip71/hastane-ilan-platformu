@@ -10,6 +10,28 @@ import helmet from 'helmet';
 dotenv.config();
 
 const app = express();
+
+// YARDIMCI FONKSİYON: Türkçe karakter duyarlı isim büyük harf standardizasyonu
+// "osman yılmaz" → "Osman Yılmaz" | "İ/ı" ve "i" Türkçe kurallarına göre işlenir
+function capitalizeTurkish(str) {
+  if (!str || typeof str !== 'string') return '';
+  return str
+    .trim()
+    .replace(/\s+/g, ' ') // çoklu boşlukları tek boşluğa indir
+    .split(' ')
+    .map(word => {
+      if (!word) return '';
+      const firstChar = word[0];
+      // Türkçe özel büyük harf kuralları: i→İ, ı→I
+      let upperFirst;
+      if (firstChar === 'i') upperFirst = 'İ';
+      else if (firstChar === 'ı') upperFirst = 'I';
+      else upperFirst = firstChar.toLocaleUpperCase('tr-TR');
+      // Geri kalan harfler küçük (tr-TR kuralıyla: İ→i, I→ı)
+      return upperFirst + word.slice(1).toLocaleLowerCase('tr-TR');
+    })
+    .join(' ');
+}
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'hastane_varsayilan_yedek_gizli_anahtar';
 
@@ -127,11 +149,15 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
     // 7. Görev 02 Kuralı: Dışarıdan admin/moderator gönderilse bile HESAP HER ZAMAN 'employee' ve 'pending' olacak!
+    // İsimler Türkçe karakter duyarlı büyük harf standardizasyonundan geçirilir ("osman" → "Osman")
+    const cleanFirstName = capitalizeTurkish(firstName);
+    const cleanLastName = capitalizeTurkish(lastName);
+
     const newUser = await pool.query(
       `INSERT INTO users (first_name, last_name, email, password_hash, role, status)
        VALUES ($1, $2, $3, $4, 'employee', 'pending')
        RETURNING id, first_name, last_name, email, role, status, created_at`,
-      [firstName.trim(), lastName.trim(), email.toLowerCase().trim(), passwordHash]
+      [cleanFirstName, cleanLastName, email.toLowerCase().trim(), passwordHash]
     );
 
     // 8. Başarı yanıtı
