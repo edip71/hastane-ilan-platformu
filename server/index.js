@@ -249,7 +249,143 @@ function authenticateToken(req, res, next) {
   });
 }
 
-// Korumalı Oturum Bilgisi Alma Endpoint'i (Frontend sayfa yenilendiğinde oturumu doğrular)
+// Güvenlik Middleware'i: Sadece Yetkili Roller (Admin / Moderator) Erişebilir
+function requireRole(...allowedRoles) {
+  return (req, res, next) => {
+    if (!req.user || !allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({
+        error: 'Bu işlem için yetkiniz bulunmamaktadır. Yalnızca yetkili yöneticiler erişebilir.',
+        statusCode: 'FORBIDDEN_ROLE',
+      });
+    }
+    next();
+  };
+}
+
+// ---------------- GÖREV 04: YÖNETİM › KULLANICILAR API'LERİ ----------------
+
+// 1. Kullanıcıları Listele (Arama, Durum Filtresi)
+app.get('/api/admin/users', authenticateToken, requireRole('admin', 'moderator'), async (req, res) => {
+  try {
+    const { status, search } = req.query;
+
+    let queryText = `
+      SELECT id, first_name, last_name, email, role, status, created_at, updated_at
+      FROM users
+      WHERE 1=1
+    `;
+    const queryParams = [];
+
+    // Durum filtresi (pending, active, suspended)
+    if (status && status !== 'all') {
+      queryParams.push(status);
+      queryText += ` AND status = $${queryParams.length}`;
+    }
+
+    // Arama (Ad, Soyad veya E-posta) - SQL Injection korumalı parametreli sorgu
+    if (search && search.trim() !== '') {
+      queryParams.push(`%${search.trim().toLowerCase()}%`);
+      queryText += ` AND (LOWER(first_name) LIKE $${queryParams.length} OR LOWER(last_name) LIKE $${queryParams.length} OR LOWER(email) LIKE $${queryParams.length})`;
+    }
+
+    queryText += ` ORDER BY created_at DESC`;
+
+    const result = await pool.query(queryText, queryParams);
+    res.json({ users: result.rows });
+  } catch (error) {
+    console.error('Kullanıcı listeleme hatası:', error);
+    res.status(500).json({ error: 'Kullanıcı listesi alınırken sunucu hatası oluştu.' });
+  }
+});
+
+// 2. Kullanıcı Durumunu Güncelle (Onayla, Reddet, Askıya Al, Etkinleştir)
+app.patch('/api/admin/users/:id/status', authenticateToken, requireRole('admin', 'moderator'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const targetUserId = parseInt(req.params.id, 10);
+    const { action, reason } = req.body; // 'APPROVE', 'REJECT', 'SUSPEND', 'ACTIVATE'
+
+    if (!targetUserId || isNaN(targetUserId)) {
+      return res.status(400).json({ error: 'Geçersiz kullanıcı kimliği.' });
+    }
+
+    // Hedef kullanıcıyı bul
+    const userCheck = await client.query('SELECT id, role, status, email FROM users WHERE id = $1', [targetUserId]);
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
+    }
+
+    const targetUser = userCheck.rows[0];
+
+    // Güvenlik Kuralı: Son kalan adminin durumu düşürülemez veya askıya alınamaz
+    if (targetUser.role === 'admin' && (action === 'SUSPEND' || action === 'REJECT')) {
+      const adminCountResult = await client.query("SELECT COUNT(*) FROM users WHERE role = 'admin' AND status = 'active'");
+      if (parseInt(adminCountResult.rows[0].count, 10) <= 1) {
+        return res.status(400).json({ error: 'Sistemde en az bir aktif yönetici bulunmalıdır. Bu yönetici askıya alınamaz.' });
+      }
+    }
+
+    // PDF Kuralı: Ret gerekçesi zorunludur
+    if (action === 'REJECT' && (!reason || reason.trim().length < 5)) {
+      return res.status(400).json({ error: 'Başvuruyu reddederken en az 5 karakterlik geçerli bir gerekçe belirtmelisiniz.' });
+    }
+
+    let newStatus = '';
+    if (action === 'APPROVE' || action === 'ACTIVATE') newStatus = 'active';
+    else if (action === 'SUSPEND') newStatus = 'suspended';
+    else if (action === 'REJECT') newStatus = 'rejected';
+    else {
+      return res.status(400).json({ error: 'Geçersiz durum eylemi.' });
+    }
+
+    // Transaction Başlat: Kullanıcı durumu ile Audit Log aynı anda güvenle yazılır
+    await client.query('BEGIN');
+
+    await client.query(
+      'UPDATE users SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      [newStatus, targetUserId]
+    );
+
+    await client.query(
+      `INSERT INTO audit_logs (performed_by_id, target_user_id, action, reason)
+       VALUES ($1, $2, $3, $4)`,
+      [req.user.id, targetUserId, action, reason ? reason.trim() : null]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: `Kullanıcı durumu başarıyla güncellendi: ${newStatus}`,
+      user: { id: targetUserId, status: newStatus },
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Kullanıcı durum güncelleme hatası:', error);
+    res.status(500).json({ error: 'İşlem gerçekleştirilemedi. Veritabanı geri alındı.' });
+  } finally {
+    client.release();
+  }
+});
+
+// 3. Kullanıcı İşlem Geçmişi (Audit Logs)
+app.get('/api/admin/users/:id/logs', authenticateToken, requireRole('admin', 'moderator'), async (req, res) => {
+  try {
+    const targetUserId = parseInt(req.params.id, 10);
+    const result = await pool.query(
+      `SELECT a.id, a.action, a.reason, a.created_at,
+              u.first_name as performed_by_first_name, u.last_name as performed_by_last_name
+       FROM audit_logs a
+       LEFT JOIN users u ON a.performed_by_id = u.id
+       WHERE a.target_user_id = $1
+       ORDER BY a.created_at DESC`,
+      [targetUserId]
+    );
+    res.json({ logs: result.rows });
+  } catch (error) {
+    res.status(500).json({ error: 'İşlem geçmişi alınamadı.' });
+  }
+});
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
     const userResult = await pool.query(
