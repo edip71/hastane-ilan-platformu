@@ -4,16 +4,27 @@ import dotenv from 'dotenv';
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
+import jwt from 'jsonwebtoken';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET || 'hastane_varsayilan_yedek_gizli_anahtar';
 
-// Güvenlik: Kayıt ve Giriş için Brute-Force (Kaba Kuvvet) ve Spam Koruması (Rate Limiting)
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 dakika
-  max: 20, // 15 dakikada aynı IP'den en fazla 20 istek
+// Güvenlik: Giriş denemeleri için sıkı Kaba Kuvvet (Brute-Force) sınırlaması (15 dakikada maks 10 deneme)
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Çok fazla hatalı giriş denemesi yaptınız. Lütfen 15 dakika sonra tekrar deneyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Güvenlik: Kayıt için Spam Koruması (15 dakikada maks 20 istek)
+const registerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
   message: { error: 'Çok fazla deneme yaptınız. Lütfen 15 dakika sonra tekrar deneyin.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -67,7 +78,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // GÖREV 02: KAYIT OL (REGISTER) ENDPOINT'İ
-app.post('/api/auth/register', authLimiter, async (req, res) => {
+app.post('/api/auth/register', registerLimiter, async (req, res) => {
   try {
     const { firstName, lastName, email, password, confirmPassword } = req.body;
 
@@ -128,6 +139,143 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   } catch (error) {
     console.error('Kayıt hatası:', error);
     res.status(500).json({ error: 'Sunucuda bir hata oluştu. Lütfen tekrar deneyin.' });
+  }
+});
+
+// GÖREV 03: GİRİŞ YAP (LOGIN) ENDPOINT'İ
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // 1. Boş alan kontrolü
+    if (!email || !password) {
+      return res.status(400).json({ error: 'E-posta ve şifre alanları zorunludur.' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+
+    // 2. Kullanıcıyı bul
+    const userResult = await pool.query(
+      'SELECT id, first_name, last_name, email, password_hash, role, status FROM users WHERE email = $1',
+      [cleanEmail]
+    );
+
+    // Güvenlik İlkesi: Kullanıcı bulunamazsa şifre kontrolü yapılmadan çıkılır,
+    // ancak saldırganın e-postanın kayıtlı olup olmadığını anlamaması için genel mesaj verilir.
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({ error: 'Geçersiz e-posta veya şifre girdiniz.' });
+    }
+
+    const user = userResult.rows[0];
+
+    // 3. Şifre doğrulama (bcrypt karşılaştırması)
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: 'Geçersiz e-posta veya şifre girdiniz.' });
+    }
+
+    // 4. PDF Kuralı: Hesap Onay Durumu Kontrolleri
+    if (user.status === 'pending') {
+      return res.status(403).json({
+        error: 'Hesabınız henüz yönetici tarafından onaylanmamıştır. Lütfen onay sürecini bekleyin.',
+        statusCode: 'ACCOUNT_PENDING',
+      });
+    }
+
+    if (user.status === 'suspended') {
+      return res.status(403).json({
+        error: 'Hesabınız askıya alınmıştır. Kurum yönetimi ile iletişime geçiniz.',
+        statusCode: 'ACCOUNT_SUSPENDED',
+      });
+    }
+
+    if (user.status !== 'active') {
+      return res.status(403).json({
+        error: 'Hesabınız aktif durumda değildir.',
+        statusCode: 'ACCOUNT_INACTIVE',
+      });
+    }
+
+    // 5. Güvenli JWT (JSON Web Token) Oturum Anahtarı Üretimi
+    const token = jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+      },
+      JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    );
+
+    // 6. Başarılı Giriş Yanıtı (Şifre hash'i asla geri dönülmez!)
+    res.json({
+      success: true,
+      message: 'Giriş başarılı.',
+      token,
+      user: {
+        id: user.id,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+      },
+    });
+  } catch (error) {
+    console.error('Giriş hatası:', error);
+    res.status(500).json({ error: 'Sunucuda bir hata oluştu. Lütfen tekrar deneyin.' });
+  }
+});
+
+// Güvenlik Middleware'i: Token ve Oturum Doğrulama
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // "Bearer TOKEN"
+
+  if (!token) {
+    return res.status(401).json({ error: 'Oturum bilgisi bulunamadı. Lütfen giriş yapın.' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(403).json({ error: 'Oturum süreniz dolmuş veya geçersiz. Lütfen tekrar giriş yapın.' });
+    }
+    req.user = decoded;
+    next();
+  });
+}
+
+// Korumalı Oturum Bilgisi Alma Endpoint'i (Frontend sayfa yenilendiğinde oturumu doğrular)
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  try {
+    const userResult = await pool.query(
+      'SELECT id, first_name, last_name, email, role, status FROM users WHERE id = $1',
+      [req.user.id]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
+    }
+
+    const user = userResult.rows[0];
+
+    // Oturum anında hesap askıya alınmışsa hemen engelle (PDF Görev 03 kuralı)
+    if (user.status !== 'active') {
+      return res.status(403).json({ error: 'Hesabınız aktif değildir.' });
+    }
+
+    res.json({
+      user: {
+        id: user.id,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Sunucu hatası.' });
   }
 });
 
