@@ -88,8 +88,17 @@ async function initDb() {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id SERIAL PRIMARY KEY,
+        performed_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        target_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        action VARCHAR(50) NOT NULL,
+        reason TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
     `);
-    console.log('✅ "users" tablosu hazır!');
+    console.log('✅ "users" ve "audit_logs" tabloları hazır!');
     client.release();
   } catch (err) {
     console.error('❌ Veritabanı bağlantı hatası:', err.message);

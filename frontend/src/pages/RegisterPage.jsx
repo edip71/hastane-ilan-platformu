@@ -211,7 +211,7 @@ export default function RegisterPage() {
                 style={{ cursor: 'pointer', marginTop: 3 }}
               />
               <label htmlFor="termsAccepted" style={styles.checkboxLabel}>
-                Hastane kurumsal ilan platformu kullanım koşullarını onaylıyorum.
+                Hastane kurumsal ilan platformu Kullanım Koşulları'nı ve KVKK Aydınlatma Metni'ni okudum, onaylıyorum.
               </label>
             </div>
             {fieldErrors.termsAccepted && (
