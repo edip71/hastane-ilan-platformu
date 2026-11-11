@@ -711,143 +711,145 @@ function DashboardView({ user, token, onLogout }) {
               </div>
             )}
 
-            {/* Kullanıcı Tablosu */}
+            {/* Kullanıcı Tablosu - Responsive Wrapper */}
             <div style={styles.tableCard}>
-              {loading ? (
-                <div style={{ padding: '32px', textAlign: 'center', color: '#64748b' }}>
-                  Yükleniyor...
-                </div>
-              ) : usersList.length === 0 ? (
-                <div style={{ padding: '32px', textAlign: 'center', color: '#64748b' }}>
-                  Bu filtreye uygun kullanıcı kaydı bulunamadı.
-                </div>
-              ) : (
-                <table style={styles.table}>
-                  <thead>
-                    <tr style={styles.tableHeaderRow}>
-                      <th style={styles.th}>Personel Bilgisi</th>
-                      <th style={styles.th}>Rol</th>
-                      <th style={styles.th}>Durum</th>
-                      <th style={styles.th}>Kayıt Tarihi</th>
-                      <th style={{ ...styles.th, textAlign: 'right' }}>İşlemler</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usersList.map((item) => (
-                      <tr key={item.id} style={styles.tableRow}>
-                        <td style={styles.td}>
-                          <div style={{ fontWeight: '600', color: '#1e293b' }}>
-                            {item.first_name} {item.last_name}
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#64748b' }}>{item.email}</div>
-                        </td>
-                        <td style={styles.td}>
-                          <span style={styles.roleBadge}>
-                            {item.role === 'admin' ? 'Yönetici' : 'Çalışan'}
-                          </span>
-                        </td>
-                        <td style={styles.td}>
-                          <span
-                            style={{
-                              ...styles.statusBadge,
-                              backgroundColor:
-                                item.status === 'active'
-                                  ? '#dcfce7'
-                                  : item.status === 'pending'
-                                  ? '#fef3c7'
-                                  : item.status === 'suspended'
-                                  ? '#fee2e2'
-                                  : '#f1f5f9',
-                              color:
-                                item.status === 'active'
-                                  ? '#166534'
-                                  : item.status === 'pending'
-                                  ? '#92400e'
-                                  : item.status === 'suspended'
-                                  ? '#991b1b'
-                                  : '#475569',
-                            }}
-                          >
-                            {item.status === 'active' && 'Aktif'}
-                            {item.status === 'pending' && 'Onay Bekliyor'}
-                            {item.status === 'suspended' && 'Askıda'}
-                            {item.status === 'rejected' && 'Reddedildi'}
-                          </span>
-                        </td>
-                        <td style={styles.td}>
-                          <span style={{ fontSize: '12px', color: '#64748b' }}>
-                            {new Date(item.created_at).toLocaleDateString('tr-TR')}
-                          </span>
-                        </td>
-                        <td style={{ ...styles.td, textAlign: 'right' }}>
-                          <div style={styles.actionButtonGroup}>
-                            {/* Onay Bekleyen İşlemleri */}
-                            {item.status === 'pending' && (
-                              <>
-                                <button
-                                  onClick={() => handleStatusAction(item.id, 'APPROVE')}
-                                  style={styles.btnApprove}
-                                  title="Hesabı Onayla"
-                                >
-                                  <Check size={14} style={{ marginRight: 4 }} />
-                                  Onayla
-                                </button>
+              <div className="responsive-table-wrapper">
+                {loading ? (
+                  <div style={{ padding: '32px', textAlign: 'center', color: '#64748b' }}>
+                    Yükleniyor...
+                  </div>
+                ) : usersList.length === 0 ? (
+                  <div style={{ padding: '32px', textAlign: 'center', color: '#64748b' }}>
+                    Bu filtreye uygun kullanıcı kaydı bulunamadı.
+                  </div>
+                ) : (
+                  <table style={styles.table}>
+                    <thead>
+                      <tr style={styles.tableHeaderRow}>
+                        <th style={styles.th}>Personel Bilgisi</th>
+                        <th style={styles.th}>Rol</th>
+                        <th style={styles.th}>Durum</th>
+                        <th style={styles.th}>Kayıt Tarihi</th>
+                        <th style={{ ...styles.th, textAlign: 'right' }}>İşlemler</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {usersList.map((item) => (
+                        <tr key={item.id} style={styles.tableRow}>
+                          <td style={styles.td}>
+                            <div style={{ fontWeight: '600', color: '#1e293b' }}>
+                              {item.first_name} {item.last_name}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#64748b' }}>{item.email}</div>
+                          </td>
+                          <td style={styles.td}>
+                            <span style={styles.roleBadge}>
+                              {item.role === 'admin' ? 'Yönetici' : 'Çalışan'}
+                            </span>
+                          </td>
+                          <td style={styles.td}>
+                            <span
+                              style={{
+                                ...styles.statusBadge,
+                                backgroundColor:
+                                  item.status === 'active'
+                                    ? '#dcfce7'
+                                    : item.status === 'pending'
+                                    ? '#fef3c7'
+                                    : item.status === 'suspended'
+                                    ? '#fee2e2'
+                                    : '#f1f5f9',
+                                color:
+                                  item.status === 'active'
+                                    ? '#166534'
+                                    : item.status === 'pending'
+                                    ? '#92400e'
+                                    : item.status === 'suspended'
+                                    ? '#991b1b'
+                                    : '#475569',
+                              }}
+                            >
+                              {item.status === 'active' && 'Aktif'}
+                              {item.status === 'pending' && 'Onay Bekliyor'}
+                              {item.status === 'suspended' && 'Askıda'}
+                              {item.status === 'rejected' && 'Reddedildi'}
+                            </span>
+                          </td>
+                          <td style={styles.td}>
+                            <span style={{ fontSize: '12px', color: '#64748b' }}>
+                              {new Date(item.created_at).toLocaleDateString('tr-TR')}
+                            </span>
+                          </td>
+                          <td style={{ ...styles.td, textAlign: 'right' }}>
+                            <div style={styles.actionButtonGroup}>
+                              {/* Onay Bekleyen İşlemleri */}
+                              {item.status === 'pending' && (
+                                <>
+                                  <button
+                                    onClick={() => handleStatusAction(item.id, 'APPROVE')}
+                                    style={styles.btnApprove}
+                                    title="Hesabı Onayla"
+                                  >
+                                    <Check size={14} style={{ marginRight: 4 }} />
+                                    Onayla
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedUser(item);
+                                      setModalType('REJECT');
+                                    }}
+                                    style={styles.btnReject}
+                                    title="Gerekçeyle Reddet"
+                                  >
+                                    <X size={14} style={{ marginRight: 4 }} />
+                                    Reddet
+                                  </button>
+                                </>
+                              )}
+
+                              {/* Aktif Hesap İşlemleri */}
+                              {item.status === 'active' && item.id !== user.id && (
                                 <button
                                   onClick={() => {
                                     setSelectedUser(item);
-                                    setModalType('REJECT');
+                                    setModalType('SUSPEND');
                                   }}
-                                  style={styles.btnReject}
-                                  title="Gerekçeyle Reddet"
+                                  style={styles.btnSuspend}
+                                  title="Hesabı Askıya Al"
                                 >
-                                  <X size={14} style={{ marginRight: 4 }} />
-                                  Reddet
+                                  <PauseCircle size={14} style={{ marginRight: 4 }} />
+                                  Askıya Al
                                 </button>
-                              </>
-                            )}
+                              )}
 
-                            {/* Aktif Hesap İşlemleri */}
-                            {item.status === 'active' && item.id !== user.id && (
+                              {/* Askıdaki Hesap İşlemleri */}
+                              {item.status === 'suspended' && (
+                                <button
+                                  onClick={() => handleStatusAction(item.id, 'ACTIVATE')}
+                                  style={styles.btnActivate}
+                                  title="Tekrar Etkinleştir"
+                                >
+                                  <PlayCircle size={14} style={{ marginRight: 4 }} />
+                                  Etkinleştir
+                                </button>
+                              )}
+
+                              {/* İşlem Geçmişi */}
                               <button
-                                onClick={() => {
-                                  setSelectedUser(item);
-                                  setModalType('SUSPEND');
-                                }}
-                                style={styles.btnSuspend}
-                                title="Hesabı Askıya Al"
+                                onClick={() => handleViewLogs(item)}
+                                style={styles.btnHistory}
+                                title="İşlem Geçmişi"
                               >
-                                <PauseCircle size={14} style={{ marginRight: 4 }} />
-                                Askıya Al
+                                <History size={14} />
                               </button>
-                            )}
-
-                            {/* Askıdaki Hesap İşlemleri */}
-                            {item.status === 'suspended' && (
-                              <button
-                                onClick={() => handleStatusAction(item.id, 'ACTIVATE')}
-                                style={styles.btnActivate}
-                                title="Tekrar Etkinleştir"
-                              >
-                                <PlayCircle size={14} style={{ marginRight: 4 }} />
-                                Etkinleştir
-                              </button>
-                            )}
-
-                            {/* İşlem Geçmişi */}
-                            <button
-                              onClick={() => handleViewLogs(item)}
-                              style={styles.btnHistory}
-                              title="İşlem Geçmişi"
-                            >
-                              <History size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             </div>
           </div>
         )}
