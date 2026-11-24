@@ -22,7 +22,8 @@ app.use(cors({
   origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
   credentials: true
 }));
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Veritabanı Havuzu
 export const pool = new Pool({
@@ -95,6 +96,29 @@ async function initDb() {
         display_order INTEGER DEFAULT 0 NOT NULL,
         is_active BOOLEAN DEFAULT TRUE NOT NULL,
         custom_fields JSONB DEFAULT '[]'::jsonb,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 4. Listings Tablosu (Görev 07 Kapsamı - İlanlar)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS listings (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
+        title VARCHAR(150) NOT NULL,
+        description TEXT NOT NULL,
+        price NUMERIC(12, 2) DEFAULT NULL,
+        is_free BOOLEAN DEFAULT FALSE NOT NULL,
+        currency VARCHAR(10) DEFAULT 'TRY' NOT NULL,
+        contact_info VARCHAR(200) DEFAULT NULL,
+        location VARCHAR(100) DEFAULT NULL,
+        custom_values JSONB DEFAULT '{}'::jsonb,
+        images JSONB DEFAULT '[]'::jsonb,
+        cover_image TEXT DEFAULT NULL,
+        status VARCHAR(20) DEFAULT 'pending' NOT NULL, -- 'draft', 'pending', 'active', 'rejected', 'passive', 'completed'
+        rejection_reason TEXT DEFAULT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
@@ -752,6 +776,142 @@ app.patch('/api/admin/categories/:id', authenticateToken, requireAdmin, async (r
   } catch (err) {
     console.error('Kategori Güncelleme Hatası:', err);
     return res.status(500).json({ error: 'Kategori güncellenirken bir hata oluştu.' });
+  }
+});
+
+// -------------------------------------------------------------
+// GÖREV 07: YENİ İLAN OLUŞTUR / TASLAK KAYDET (LISTINGS API)
+// -------------------------------------------------------------
+
+// 1. Yeni İlan Oluştur veya Taslak Kaydet (Oturum Zorunlu)
+app.post('/api/listings', authenticateToken, async (req, res) => {
+  try {
+    const {
+      categoryId,
+      title,
+      description,
+      price,
+      isFree,
+      currency,
+      contactInfo,
+      location,
+      customValues,
+      images,
+      coverImage,
+      isDraft // true ise taslak, false/undefined ise onaya gönder
+    } = req.body;
+
+    const targetStatus = isDraft === true ? 'draft' : 'pending';
+
+    // 1. Zorunlu Alan Kontrolleri (Taslak değilse zorunlu, taslaksa kısmi doldurulabilir)
+    if (!categoryId || isNaN(parseInt(categoryId, 10))) {
+      return res.status(400).json({ error: 'Lütfen geçerli bir kategori seçiniz.' });
+    }
+
+    const catCheck = await pool.query('SELECT * FROM categories WHERE id = $1', [parseInt(categoryId, 10)]);
+    if (catCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Seçilen kategori bulunamadı.' });
+    }
+    const selectedCategory = catCheck.rows[0];
+
+    // Kılavuz kuralı: Pasif kategori yeni ilan formunda seçilemez!
+    if (!selectedCategory.is_active) {
+      return res.status(400).json({ error: 'Bu kategori pasife alınmıştır, yeni ilan açılamaz.' });
+    }
+
+    if (targetStatus === 'pending') {
+      if (!title || title.trim().length < 5) {
+        return res.status(400).json({ error: 'İlan başlığı en az 5 karakter olmalıdır.' });
+      }
+      if (title.trim().length > 150) {
+        return res.status(400).json({ error: 'İlan başlığı en fazla 150 karakter olabilir.' });
+      }
+
+      if (!description || description.trim().length < 10) {
+        return res.status(400).json({ error: 'İlan açıklaması en az 10 karakter olmalıdır.' });
+      }
+      if (description.trim().length > 2000) {
+        return res.status(400).json({ error: 'İlan açıklaması en fazla 2000 karakter olabilir.' });
+      }
+
+      // Fiyat / Ücretsiz mantığı
+      if (!isFree) {
+        if (price === undefined || price === null || price === '') {
+          return res.status(400).json({ error: 'Lütfen bir fiyat girin veya "Ücretsiz" seçeneğini işaretleyin.' });
+        }
+        if (isNaN(Number(price)) || Number(price) < 0) {
+          return res.status(400).json({ error: 'Geçerli bir fiyat giriniz.' });
+        }
+      }
+
+      // Kategoriye ait zorunlu özel alanların doğrulanması
+      const customFields = Array.isArray(selectedCategory.custom_fields) ? selectedCategory.custom_fields : [];
+      const values = customValues || {};
+      for (const f of customFields) {
+        if (f.required && (!values[f.name] || String(values[f.name]).trim() === '')) {
+          return res.status(400).json({ error: `"${f.name}" alanını doldurmanız zorunludur.` });
+        }
+      }
+    }
+
+    // 2. Fotoğraflar Denetimi (Maksimum 5 fotoğraf, format kontrolü)
+    const validImages = Array.isArray(images) ? images.slice(0, 5) : [];
+    const selectedCover = coverImage || (validImages.length > 0 ? validImages[0] : null);
+
+    const safeTitle = (title || 'Taslak İlan').trim().slice(0, 150);
+    const safeDesc = (description || '').trim().slice(0, 2000);
+    const safePrice = isFree ? null : (price !== undefined && price !== '' ? Number(price) : null);
+    const safeCurrency = currency || 'TRY';
+    const safeContact = contactInfo ? contactInfo.trim().slice(0, 200) : null;
+    const safeLocation = location ? location.trim().slice(0, 100) : null;
+
+    const insertRes = await pool.query(`
+      INSERT INTO listings (
+        user_id, category_id, title, description, price, is_free, currency,
+        contact_info, location, custom_values, images, cover_image, status
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      RETURNING *
+    `, [
+      req.user.id,
+      selectedCategory.id,
+      safeTitle,
+      safeDesc,
+      safePrice,
+      Boolean(isFree),
+      safeCurrency,
+      safeContact,
+      safeLocation,
+      JSON.stringify(customValues || {}),
+      JSON.stringify(validImages),
+      selectedCover,
+      targetStatus
+    ]);
+
+    const newListing = insertRes.rows[0];
+
+    // Denetim Günlüğü Kaydı
+    await pool.query(`
+      INSERT INTO audit_logs (action, target_user_id, performed_by, reason, details)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [
+      targetStatus === 'draft' ? 'CREATE_DRAFT_LISTING' : 'SUBMIT_LISTING_FOR_APPROVAL',
+      req.user.id,
+      req.user.id,
+      targetStatus === 'draft' ? 'İlan taslak olarak kaydedildi.' : 'İlan yönetici onayına gönderildi.',
+      { listingId: newListing.id, title: newListing.title }
+    ]);
+
+    return res.status(201).json({
+      message: targetStatus === 'draft' 
+        ? 'İlanınız taslak olarak başarıyla kaydedildi.' 
+        : 'İlanınız başarıyla onaya gönderildi. Yönetici incelemesinin ardından yayına alınacaktır.',
+      listing: newListing
+    });
+
+  } catch (err) {
+    console.error('İlan Oluşturma Hatası:', err);
+    return res.status(500).json({ error: 'İlan kaydedilirken bir hata oluştu.' });
   }
 });
 

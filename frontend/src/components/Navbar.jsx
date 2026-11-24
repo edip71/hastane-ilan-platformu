@@ -72,9 +72,7 @@ export default function Navbar({ user, onLogout }) {
 
               {/* İlan Ver Butonu (Sahibinden tarzı sarı/yeşil vurgu) */}
               <button 
-                onClick={() => {
-                  alert('İlan verme ekranı Görev 07 kapsamında sırayla açılacaktır.');
-                }}
+                onClick={() => navigate('/ilan/olustur')} 
                 style={styles.postAdBtn}
               >
                 <PlusCircle size={16} />
