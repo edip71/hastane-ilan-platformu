@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import AdminUsersPage from './pages/AdminUsersPage';
 import CreateListingPage from './pages/CreateListingPage';
+import ListingDetailPage from './pages/ListingDetailPage';
 
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem('token'));
@@ -104,6 +105,18 @@ export default function App() {
           element={
             user ? (
               <CreateListingPage user={user} token={token} onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/giris" replace />
+            )
+          } 
+        />
+
+        {/* Görev 08: İlan Detay Sayfası */}
+        <Route 
+          path="/ilan/:id" 
+          element={
+            user ? (
+              <ListingDetailPage user={user} token={token} onLogout={handleLogout} />
             ) : (
               <Navigate to="/giris" replace />
             )

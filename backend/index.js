@@ -948,6 +948,191 @@ app.post('/api/listings', authenticateToken, async (req, res) => {
   }
 });
 
+// -------------------------------------------------------------
+// GÖREV 08: İLAN DETAY & MODERATÖR İLAN YÖNETİMİ
+// -------------------------------------------------------------
+
+// Tek İlan Detayı (Oturum Zorunlu)
+app.get('/api/listings/:id', authenticateToken, async (req, res) => {
+  try {
+    const listingId = parseInt(req.params.id, 10);
+    if (isNaN(listingId)) return res.status(400).json({ error: 'Geçersiz ilan kimliği.' });
+
+    const result = await pool.query(`
+      SELECT l.*, 
+             c.name as category_name, c.slug as category_slug, c.custom_fields as category_custom_fields,
+             u.first_name as author_first_name, u.last_name as author_last_name, u.email as author_email
+      FROM listings l
+      JOIN categories c ON l.category_id = c.id
+      JOIN users u ON l.user_id = u.id
+      WHERE l.id = $1
+    `, [listingId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'İlan bulunamadı.' });
+    }
+
+    const listing = result.rows[0];
+
+    // Sadece aktif ilanı göster (admin/mod ise tümünü görebilir)
+    if (listing.status !== 'active' && req.user.role !== 'admin' && req.user.role !== 'moderator') {
+      // Kendi ilanını her zaman görebilir
+      if (listing.user_id !== req.user.id) {
+        return res.status(403).json({ error: 'Bu ilanı görüntüleme yetkiniz yok.' });
+      }
+    }
+
+    return res.json({ listing });
+  } catch (err) {
+    console.error('İlan Detay Hatası:', err);
+    return res.status(500).json({ error: 'İlan detayı getirilemedi.' });
+  }
+});
+
+// Admin: Tüm İlanları Listele (Durum Filtrelemeli)
+app.get('/api/admin/listings', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { status } = req.query;
+    let queryText = `
+      SELECT l.*, 
+             c.name as category_name,
+             u.first_name as author_first_name, u.last_name as author_last_name, u.email as author_email
+      FROM listings l
+      JOIN categories c ON l.category_id = c.id
+      JOIN users u ON l.user_id = u.id
+    `;
+    const params = [];
+
+    if (status && status !== 'all') {
+      params.push(status);
+      queryText += ` WHERE l.status = $${params.length}`;
+    }
+
+    queryText += ' ORDER BY l.created_at DESC';
+
+    const result = await pool.query(queryText, params);
+    return res.json({ listings: result.rows });
+  } catch (err) {
+    console.error('Admin İlan Listeleme Hatası:', err);
+    return res.status(500).json({ error: 'İlanlar getirilemedi.' });
+  }
+});
+
+// Admin: İlan Durumu Değiştir (Onayla / Reddet / Pasife Al)
+app.patch('/api/admin/listings/:id/status', authenticateToken, requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const listingId = parseInt(req.params.id, 10);
+    const { action, reason } = req.body;
+
+    if (isNaN(listingId)) return res.status(400).json({ error: 'Geçersiz ilan kimliği.' });
+
+    const check = await client.query('SELECT * FROM listings WHERE id = $1', [listingId]);
+    if (check.rows.length === 0) return res.status(404).json({ error: 'İlan bulunamadı.' });
+
+    let newStatus = '';
+    let auditAction = '';
+
+    if (action === 'APPROVE') {
+      newStatus = 'active';
+      auditAction = 'APPROVE_LISTING';
+    } else if (action === 'REJECT') {
+      if (!reason || reason.trim().length < 5) {
+        return res.status(400).json({ error: 'Ret için en az 5 karakterlik gerekçe belirtilmelidir.' });
+      }
+      newStatus = 'rejected';
+      auditAction = 'REJECT_LISTING';
+    } else if (action === 'PASSIVE') {
+      newStatus = 'passive';
+      auditAction = 'PASSIVE_LISTING';
+    } else if (action === 'COMPLETE') {
+      newStatus = 'completed';
+      auditAction = 'COMPLETE_LISTING';
+    } else {
+      return res.status(400).json({ error: 'Geçersiz işlem türü.' });
+    }
+
+    await client.query('BEGIN');
+
+    await client.query(
+      `UPDATE listings SET status = $1, rejection_reason = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
+      [newStatus, action === 'REJECT' ? reason.trim() : null, listingId]
+    );
+
+    await client.query(
+      `INSERT INTO audit_logs (action, target_user_id, performed_by, reason, details)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [auditAction, check.rows[0].user_id, req.user.id, reason || null, { listingId, newStatus }]
+    );
+
+    await client.query('COMMIT');
+
+    return res.json({ message: `İlan durumu "${newStatus}" olarak güncellendi.`, listingId, newStatus });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('İlan Durum Güncelleme Hatası:', err);
+    return res.status(500).json({ error: 'İlan durumu güncellenirken hata oluştu.' });
+  } finally {
+    client.release();
+  }
+});
+
+// Admin: İlan İçeriğini Düzenle (Moderatör inline edit)
+app.patch('/api/admin/listings/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const listingId = parseInt(req.params.id, 10);
+    if (isNaN(listingId)) return res.status(400).json({ error: 'Geçersiz ilan kimliği.' });
+
+    const { title, description, price, contactInfo, location } = req.body;
+
+    const check = await pool.query('SELECT * FROM listings WHERE id = $1', [listingId]);
+    if (check.rows.length === 0) return res.status(404).json({ error: 'İlan bulunamadı.' });
+
+    const current = check.rows[0];
+
+    const updatedTitle = (title && title.trim().length >= 5) ? title.trim().slice(0, 150) : current.title;
+    const updatedDesc = (description && description.trim().length >= 10) ? description.trim().slice(0, 2000) : current.description;
+    const updatedPrice = (price !== undefined && price !== null && price !== '') ? Number(price) : current.price;
+    const updatedContact = contactInfo !== undefined ? contactInfo.trim().slice(0, 200) : current.contact_info;
+    const updatedLocation = location !== undefined ? location.trim().slice(0, 100) : current.location;
+
+    const updateRes = await pool.query(`
+      UPDATE listings
+      SET title = $1, description = $2, price = $3, contact_info = $4, location = $5, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $6
+      RETURNING *
+    `, [updatedTitle, updatedDesc, updatedPrice, updatedContact, updatedLocation, listingId]);
+
+    await pool.query(
+      `INSERT INTO audit_logs (action, target_user_id, performed_by, reason, details)
+       VALUES ($1, $2, $3, $4, $5)`,
+      ['EDIT_LISTING', current.user_id, req.user.id, 'İlan içeriği moderatör tarafından düzenlendi.', { listingId }]
+    );
+
+    return res.json({ message: 'İlan başarıyla güncellendi.', listing: updateRes.rows[0] });
+  } catch (err) {
+    console.error('İlan Düzenleme Hatası:', err);
+    return res.status(500).json({ error: 'İlan düzenlenirken hata oluştu.' });
+  }
+});
+
+// Kullanıcının Kendi İlanları
+app.get('/api/my-listings', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT l.*, c.name as category_name
+      FROM listings l
+      JOIN categories c ON l.category_id = c.id
+      WHERE l.user_id = $1
+      ORDER BY l.created_at DESC
+    `, [req.user.id]);
+    return res.json({ listings: result.rows });
+  } catch (err) {
+    console.error('Kendi İlanları Getirme Hatası:', err);
+    return res.status(500).json({ error: 'İlanlarınız getirilemedi.' });
+  }
+});
+
 // Sunucuyu Dinleme
 app.listen(PORT, () => {
   console.log(`🚀 Sunucu port ${PORT} üzerinde çalışıyor.`);

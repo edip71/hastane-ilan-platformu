@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { 
   Search, Check, X, PauseCircle, PlayCircle, History, 
   AlertCircle, CheckCircle2, ArrowLeft, LogOut, Shield,
-  Users, FolderTree
+  Users, FolderTree, Tag
 } from 'lucide-react';
 import AdminCategoriesTab from '../components/AdminCategoriesTab';
+import AdminListingsTab from '../components/AdminListingsTab';
 
 export default function AdminUsersPage({ user, token, onLogout }) {
   const navigate = useNavigate();
@@ -137,6 +138,13 @@ export default function AdminUsersPage({ user, token, onLogout }) {
               >
                 <FolderTree size={15} />
                 <span>Kategori Yönetimi</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('LISTINGS')}
+                style={activeTab === 'LISTINGS' ? styles.mainNavTabActive : styles.mainNavTab}
+              >
+                <Tag size={15} />
+                <span>İlan Yönetimi (Moderatör)</span>
               </button>
             </div>
           </div>
@@ -363,6 +371,11 @@ export default function AdminUsersPage({ user, token, onLogout }) {
           {/* SEKME 2: KATEGORİ YÖNETİMİ (GÖREV 06) */}
           {activeTab === 'CATEGORIES' && (
             <AdminCategoriesTab token={token} />
+          )}
+
+          {/* SEKME 3: İLAN YÖNETİMİ & MODERATÖR DÜZENLEME (GÖREV 08) */}
+          {activeTab === 'LISTINGS' && (
+            <AdminListingsTab token={token} />
           )}
 
         </div>

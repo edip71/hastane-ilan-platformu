@@ -25,6 +25,7 @@ export default function CreateListingPage({ user, token, onLogout }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
+  const [displayPrice, setDisplayPrice] = useState('');
   const [isFree, setIsFree] = useState(false);
   const [contactInfo, setContactInfo] = useState('');
   const [building, setBuilding] = useState(''); // Kurum İçi Bina / Blok
@@ -52,6 +53,23 @@ export default function CreateListingPage({ user, token, onLogout }) {
       })
       .catch(() => setError('Kategoriler yüklenemedi.'));
   }, []);
+
+  // Fiyat formatlama fonksiyonu: 20000 -> 20.000
+  const formatTurkishNumber = (val) => {
+    if (!val) return '';
+    const clean = val.replace(/\D/g, '');
+    if (!clean) return '';
+    return Number(clean).toLocaleString('tr-TR');
+  };
+
+  const handlePriceChange = (e) => {
+    const raw = e.target.value;
+    const digitsOnly = raw.replace(/\D/g, '');
+    setPrice(digitsOnly);
+    setDisplayPrice(digitsOnly ? Number(digitsOnly).toLocaleString('tr-TR') : '');
+    setFieldErrors(prev => ({ ...prev, price: undefined }));
+    setError('');
+  };
 
   const handleCategoryChange = (e) => {
     const catId = e.target.value;
@@ -376,16 +394,11 @@ export default function CreateListingPage({ user, token, onLogout }) {
                   <div style={{ flex: 1 }}>
                     <label style={styles.label}>Fiyat (TL) {!isFree && '*'}</label>
                     <input
-                      type="number"
+                      type="text"
                       disabled={isFree}
-                      value={price}
-                      onChange={(e) => {
-                        setPrice(e.target.value);
-                        setFieldErrors(prev => ({ ...prev, price: undefined }));
-                        setError('');
-                      }}
-                      placeholder="0.00"
-                      min="0"
+                      value={displayPrice}
+                      onChange={handlePriceChange}
+                      placeholder="Örn: 20.000 veya 1.000"
                       style={{
                         ...styles.input,
                         backgroundColor: isFree ? '#f1f5f9' : '#ffffff',
@@ -403,7 +416,10 @@ export default function CreateListingPage({ user, token, onLogout }) {
                         checked={isFree}
                         onChange={(e) => {
                           setIsFree(e.target.checked);
-                          if (e.target.checked) setPrice('');
+                          if (e.target.checked) {
+                            setPrice('');
+                            setDisplayPrice('');
+                          }
                           setFieldErrors(prev => ({ ...prev, price: undefined }));
                         }}
                       />

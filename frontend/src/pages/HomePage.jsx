@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { 
   Laptop, Tv, Sofa, Shirt, BookOpen, 
@@ -7,10 +8,33 @@ import {
 } from 'lucide-react';
 
 export default function HomePage({ user, onLogout }) {
+  const navigate = useNavigate();
   const [categories, setCategories] = useState([]);
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCat, setSelectedCat] = useState('');
+  
+  // Ziyaret edilen ilanların ID'lerini sakla (Google tarzı mor renk için)
+  const [visitedListings, setVisitedListings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('visitedListings');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleListingClick = (item) => {
+    // Ziyaret listesine ekle
+    if (!visitedListings.includes(item.id)) {
+      const updated = [...visitedListings, item.id];
+      setVisitedListings(updated);
+      try {
+        localStorage.setItem('visitedListings', JSON.stringify(updated));
+      } catch {}
+    }
+    navigate(`/ilan/${item.id}`);
+  };
 
   // Kategorileri Çek
   useEffect(() => {
@@ -143,38 +167,56 @@ export default function HomePage({ user, onLogout }) {
                 </div>
               ) : (
                 <div style={styles.grid}>
-                  {listings.map((item) => (
-                    <div key={item.id} style={styles.adCard}>
-                      <div style={styles.adImgPlaceholder}>
-                        {item.cover_image ? (
-                          <img src={item.cover_image} alt={item.title} style={styles.adCoverImg} />
-                        ) : (
-                          <ImageIcon size={32} color="#94a3b8" />
-                        )}
-                        <span style={styles.categoryBadge}>{item.category_name}</span>
-                      </div>
-                      <div style={styles.adBody}>
-                        <div style={styles.adPrice}>
-                          {item.is_free ? 'ÜCRETSİZ' : (item.price ? `${Number(item.price).toLocaleString('tr-TR')} TL` : 'Fiyat Belirtilmedi')}
-                        </div>
-                        <div style={styles.adTitle} title={item.title}>{item.title}</div>
-                        
-                        <div style={styles.adMeta}>
-                          {item.location && (
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                              <MapPin size={11} color="#64748b" />
-                              <span>{item.location}</span>
-                            </span>
-                          )}
-                        </div>
+                  {listings.map((item) => {
+                    const isVisited = visitedListings.includes(item.id);
 
-                        <div style={styles.adFooter}>
-                          <span>{item.author_first_name} {item.author_last_name}</span>
-                          <span>{new Date(item.created_at).toLocaleDateString('tr-TR')}</span>
+                    return (
+                      <div 
+                        key={item.id} 
+                        style={styles.adCard}
+                        onClick={() => handleListingClick(item)}
+                      >
+                        <div style={styles.adImgPlaceholder}>
+                          {item.cover_image ? (
+                            <img src={item.cover_image} alt={item.title} style={styles.adCoverImg} />
+                          ) : (
+                            <ImageIcon size={32} color="#94a3b8" />
+                          )}
+                          <span style={styles.categoryBadge}>{item.category_name}</span>
+                        </div>
+                        <div style={styles.adBody}>
+                          <div style={styles.adPrice}>
+                            {item.is_free ? 'ÜCRETSİZ' : (item.price ? `${Number(item.price).toLocaleString('tr-TR')} TL` : 'Fiyat Belirtilmedi')}
+                          </div>
+                          
+                          {/* Ziyaret edildiyse mor (#7c3aed / #6b21a8), edilmediyse koyu lacivert */}
+                          <div 
+                            style={{
+                              ...styles.adTitle,
+                              color: isVisited ? '#7c3aed' : '#1e293b',
+                            }} 
+                            title={item.title}
+                          >
+                            {item.title}
+                          </div>
+                          
+                          <div style={styles.adMeta}>
+                            {item.location && (
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                <MapPin size={11} color="#64748b" />
+                                <span>{item.location}</span>
+                              </span>
+                            )}
+                          </div>
+
+                          <div style={styles.adFooter}>
+                            <span>{item.author_first_name} {item.author_last_name}</span>
+                            <span>{new Date(item.created_at).toLocaleDateString('tr-TR')}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
