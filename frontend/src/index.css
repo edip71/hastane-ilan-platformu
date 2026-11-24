@@ -74,7 +74,7 @@ input:focus, select:focus, textarea:focus {
   animation: spin 0.8s linear infinite;
 }
 
-/* RESPONSIVE GÖRÜNÜRLÜK SINIFLARI */
+/* RESPONSIVE GÖRÜNÜRLÜK VE MOBİL İYİLEŞTİRMELERİ */
 .mobile-only {
   display: none !important;
 }
@@ -91,6 +91,19 @@ input:focus, select:focus, textarea:focus {
     display: none !important;
   }
   body {
-    padding-bottom: 60px; /* Sabit mobil alt bar için boşluk */
+    padding-bottom: 65px; /* Sahibinden mobil alt menü boşluğu */
+  }
+
+  /* Küçük ekranlarda tabloların yatay kaydırılabilmesi */
+  table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Mobilde form ve düzen kolonlarının tam genişlik alması */
+  .layout, .content-layout {
+    flex-direction: column !important;
   }
 }
