@@ -44,7 +44,7 @@ function capitalizeTurkish(str) {
     .join(' ');
 }
 
-// Güçlü şifre denetimi (En az 8 karakter, 1 büyük harf, 1 küçük harf, 1 rakam, 1 özel karakter)
+// Güçlü şifre denetimi
 function isStrongPassword(password) {
   if (!password || password.length < 8) return false;
   const hasUpperCase = /[A-ZÇĞİÖŞÜ]/.test(password);
@@ -54,7 +54,7 @@ function isStrongPassword(password) {
   return hasUpperCase && hasLowerCase && hasNumbers && hasSpecialChar;
 }
 
-// Veritabanı İlk Başlatma (Görev 01-04 Kapsamı)
+// Veritabanı İlk Başlatma (Görev 01-04 ve Görev 06 Kapsamı)
 async function initDb() {
   try {
     // 1. Users Tablosu
@@ -72,7 +72,7 @@ async function initDb() {
       );
     `);
 
-    // 2. Audit Logs Tablosu (Denetim Kayıtları)
+    // 2. Audit Logs Tablosu
     await pool.query(`
       CREATE TABLE IF NOT EXISTS audit_logs (
         id SERIAL PRIMARY KEY,
@@ -85,31 +85,121 @@ async function initDb() {
       );
     `);
 
-    // Varsayılan Admin Hesabı Kontrolü
+    // 3. Categories Tablosu (Görev 06 Kapsamı)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS categories (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        slug VARCHAR(100) UNIQUE NOT NULL,
+        parent_id INTEGER REFERENCES categories(id) ON DELETE CASCADE,
+        display_order INTEGER DEFAULT 0 NOT NULL,
+        is_active BOOLEAN DEFAULT TRUE NOT NULL,
+        custom_fields JSONB DEFAULT '[]'::jsonb,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Varsayılan Admin Hesabı
     const adminCheck = await pool.query('SELECT id FROM users WHERE email = $1', ['admin@hastane.gov.tr']);
     if (adminCheck.rows.length === 0) {
       const salt = await bcrypt.genSalt(10);
       const hashedAdminPassword = await bcrypt.hash('Admin123!', salt);
       await pool.query(`
         INSERT INTO users (first_name, last_name, email, password_hash, role, status)
-        VALUES ($1, $2, $3, $4, $5, $6)
-      `, ['Sistem', 'Yöneticisi', 'admin@hastane.gov.tr', hashedAdminPassword, 'admin', 'active']);
+        VALUES ($1, $2, $3, $4, 'admin', 'active')
+      `, ['Sistem', 'Yöneticisi', 'admin@hastane.gov.tr', hashedAdminPassword]);
       console.log('👑 Varsayılan Admin hesabı oluşturuldu (admin@hastane.gov.tr / Admin123!)');
     }
 
-    // Varsayılan Çalışan Hesabı Kontrolü
+    // Varsayılan Çalışan Hesabı
     const userCheck = await pool.query('SELECT id FROM users WHERE email = $1', ['doktor@hastane.gov.tr']);
     if (userCheck.rows.length === 0) {
       const salt = await bcrypt.genSalt(10);
       const hashedUserPassword = await bcrypt.hash('Sifre123!', salt);
       await pool.query(`
         INSERT INTO users (first_name, last_name, email, password_hash, role, status)
-        VALUES ($1, $2, $3, $4, $5, $6)
-      `, ['Ahmet', 'Yılmaz', 'doktor@hastane.gov.tr', hashedUserPassword, 'employee', 'active']);
+        VALUES ($1, $2, $3, $4, 'employee', 'active')
+      `, ['Ahmet', 'Yılmaz', 'doktor@hastane.gov.tr', hashedUserPassword]);
       console.log('🩺 Varsayılan Çalışan hesabı oluşturuldu (doktor@hastane.gov.tr / Sifre123!)');
     }
 
-    console.log('✅ Veritabanı tabloları ("users", "audit_logs") hazır ve güncel!');
+    // Varsayılan İkinci El Kategorileri Tohumlama (Seed)
+    const catCheck = await pool.query('SELECT COUNT(*) FROM categories');
+    if (parseInt(catCheck.rows[0].count, 10) === 0) {
+      // Ana Kategori: İkinci El ve Sıfır Alışveriş
+      const mainCat = await pool.query(`
+        INSERT INTO categories (name, slug, parent_id, display_order, is_active)
+        VALUES ('İkinci El ve Sıfır Alışveriş', 'ikinci-el-alisveris', NULL, 1, TRUE)
+        RETURNING id
+      `);
+      const mainId = mainCat.rows[0].id;
+
+      // Alt Kategoriler ve Dinamik Özel Alanlar
+      const subCats = [
+        {
+          name: 'Elektronik',
+          slug: 'elektronik',
+          order: 1,
+          fields: [
+            { name: 'Cihaz Durumu', type: 'select', required: true, options: ['Sıfır', 'İkinci El - Çok İyi', 'İkinci El - İyi', 'Tamir Görmüş'] },
+            { name: 'Garanti Durumu', type: 'select', required: false, options: ['Var', 'Yok'] }
+          ]
+        },
+        {
+          name: 'Beyaz Eşya & Küçük Ev Aletleri',
+          slug: 'beyaz-esya',
+          order: 2,
+          fields: [
+            { name: 'Ürün Durumu', type: 'select', required: true, options: ['Sıfır', 'Az Kullanılmış', 'Kullanılmış'] },
+            { name: 'Enerji Sınıfı', type: 'text', required: false }
+          ]
+        },
+        {
+          name: 'Ev & Yaşam / Mobilya',
+          slug: 'ev-yasam-mobilya',
+          order: 3,
+          fields: [
+            { name: 'Malzeme Türü', type: 'text', required: false },
+            { name: 'Demonte Edilebilir mi?', type: 'select', required: false, options: ['Evet', 'Hayır'] }
+          ]
+        },
+        {
+          name: 'Giyim & Aksesuar',
+          slug: 'giyim-aksesuar',
+          order: 4,
+          fields: [
+            { name: 'Beden / Numara', type: 'text', required: true },
+            { name: 'Cinsiyet', type: 'select', required: false, options: ['Erkek', 'Kadın', 'Unisex', 'Çocuk'] }
+          ]
+        },
+        {
+          name: 'Kitap & Hobi',
+          slug: 'kitap-hobi',
+          order: 5,
+          fields: [
+            { name: 'Basım Yılı', type: 'number', required: false },
+            { name: 'Sayfa Sayısı', type: 'number', required: false }
+          ]
+        },
+        {
+          name: 'Diğer Her Şey',
+          slug: 'diger',
+          order: 6,
+          fields: []
+        }
+      ];
+
+      for (const sub of subCats) {
+        await pool.query(`
+          INSERT INTO categories (name, slug, parent_id, display_order, is_active, custom_fields)
+          VALUES ($1, $2, $3, $4, TRUE, $5)
+        `, [sub.name, sub.slug, mainId, sub.order, JSON.stringify(sub.fields)]);
+      }
+      console.log('📦 Varsayılan 2. El Kategorileri ve özel alanları oluşturuldu!');
+    }
+
+    console.log('✅ Veritabanı tabloları ("users", "audit_logs", "categories") hazır ve güncel!');
   } catch (err) {
     console.error('❌ Veritabanı başlatma hatası:', err);
   }
@@ -167,12 +257,10 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
   try {
     const { firstName, lastName, email, password, confirmPassword, kvkkApproved } = req.body;
 
-    // 1. Alan Zorunluluk Kontrolleri
     if (!firstName || !lastName || !email || !password || !confirmPassword) {
       return res.status(400).json({ error: 'Lütfen tüm zorunlu alanları doldurun.' });
     }
 
-    // 2. Ad ve Soyad Kontrolü (Minimum 2 karakter, tek harf veya boşluk kabul edilmez)
     const trimmedFirst = firstName.trim();
     const trimmedLast = lastName.trim();
 
@@ -185,19 +273,16 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Ad ve soyad yalnızca harflerden oluşmalıdır.' });
     }
 
-    // 3. KVKK Aydınlatma Metni Kontrolü
     if (kvkkApproved !== true) {
       return res.status(400).json({ error: 'Kayıt olabilmek için KVKK Aydınlatma Metnini onaylamanız gerekmektedir.' });
     }
 
-    // 4. E-posta Format Kontrolü
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const cleanEmail = email.toLowerCase().trim();
     if (!emailRegex.test(cleanEmail)) {
       return res.status(400).json({ error: 'Lütfen geçerli bir e-posta adresi girin.' });
     }
 
-    // 5. Şifre Gücü ve Eşleşme Kontrolü
     if (password !== confirmPassword) {
       return res.status(400).json({ error: 'Girdiğiniz şifreler birbiriyle eşleşmiyor.' });
     }
@@ -208,13 +293,11 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
       });
     }
 
-    // 6. E-posta Benzersizlik Kontrolü
     const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [cleanEmail]);
     if (existingUser.rows.length > 0) {
       return res.status(409).json({ error: 'Bu e-posta adresi ile kayıtlı bir hesap zaten bulunmaktadır.' });
     }
 
-    // 7. Parola Hashleme & Veritabanına Kayıt (Daima 'employee' ve 'pending' durumunda)
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
@@ -230,7 +313,6 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
 
     const newUser = insertResult.rows[0];
 
-    // Denetim Günlüğü Kaydı
     await pool.query(
       `INSERT INTO audit_logs (action, target_user_id, reason, details)
        VALUES ($1, $2, $3, $4)`,
@@ -274,13 +356,11 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
 
     const user = userResult.rows[0];
 
-    // Şifre Doğrulama
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
     if (!isPasswordValid) {
       return res.status(401).json({ error: 'E-posta veya şifre hatalı.' });
     }
 
-    // Hesap Durumu Kontrolü (Başarı kontrol listesi: Bekleyen ve askıdaki hesaplar engellenmeli)
     if (user.status === 'pending') {
       return res.status(403).json({
         error: 'Hesabınız henüz yönetici tarafından onaylanmamıştır. Lütfen onay bekleyin.'
@@ -305,7 +385,6 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       });
     }
 
-    // JWT Token Üretimi
     const tokenPayload = {
       id: user.id,
       firstName: user.first_name,
@@ -329,7 +408,6 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
   }
 });
 
-// Oturum Doğrulama Endpoint'i (Frontend token kontrolü için)
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
     const userResult = await pool.query(
@@ -343,7 +421,6 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 
     const user = userResult.rows[0];
 
-    // Hesap askıya alınmışsa oturumu sonlandır
     if (user.status !== 'active') {
       return res.status(403).json({ error: 'Hesabınız aktif değildir.' });
     }
@@ -368,8 +445,6 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 // -------------------------------------------------------------
 // GÖREV 04: YÖNETİM › KULLANICILAR (ADMIN USERS)
 // -------------------------------------------------------------
-
-// Kullanıcıları Listeleme & Filtreleme (Yalnızca Admin)
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { status, search } = req.query;
@@ -401,25 +476,22 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
   }
 });
 
-// Kullanıcı Durumunu Güncelleme (Onayla, Reddet, Askıya Al, Etkinleştir)
 app.patch('/api/admin/users/:id/status', authenticateToken, requireAdmin, async (req, res) => {
   const client = await pool.connect();
   try {
     const targetUserId = parseInt(req.params.id, 10);
-    const { action, reason } = req.body; // 'APPROVE', 'REJECT', 'SUSPEND', 'ACTIVATE'
+    const { action, reason } = req.body;
 
     if (isNaN(targetUserId)) {
       return res.status(400).json({ error: 'Geçersiz kullanıcı kimliği.' });
     }
 
-    // Hedef kullanıcıyı bul
     const userCheck = await client.query('SELECT * FROM users WHERE id = $1', [targetUserId]);
     if (userCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
     }
     const targetUser = userCheck.rows[0];
 
-    // Admin kendi kendini askıya alamaz veya reddedemez
     if (targetUser.id === req.user.id && (action === 'SUSPEND' || action === 'REJECT')) {
       return res.status(400).json({ error: 'Yönetici kendi hesabını askıya alamaz veya reddedemez.' });
     }
@@ -446,16 +518,13 @@ app.patch('/api/admin/users/:id/status', authenticateToken, requireAdmin, async 
       return res.status(400).json({ error: 'Geçersiz işlem türü.' });
     }
 
-    // Atomik Transaction Başlat
     await client.query('BEGIN');
 
-    // 1. Durumu güncelle
     await client.query(
       'UPDATE users SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
       [newStatus, targetUserId]
     );
 
-    // 2. Denetim günlüğüne kaydet (Audit Log)
     await client.query(
       `INSERT INTO audit_logs (action, target_user_id, performed_by, reason, details)
        VALUES ($1, $2, $3, $4, $5)`,
@@ -484,7 +553,6 @@ app.patch('/api/admin/users/:id/status', authenticateToken, requireAdmin, async 
   }
 });
 
-// Bir Kullanıcının Denetim Geçmişini Getirme (Audit Logs)
 app.get('/api/admin/users/:id/logs', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const targetUserId = parseInt(req.params.id, 10);
@@ -500,6 +568,141 @@ app.get('/api/admin/users/:id/logs', authenticateToken, requireAdmin, async (req
   } catch (err) {
     console.error('Log getirme hatası:', err);
     return res.status(500).json({ error: 'Denetim kayıtları alınamadı.' });
+  }
+});
+
+// -------------------------------------------------------------
+// GÖREV 06: YÖNETİM › KATEGORİLER (CATEGORIES API)
+// -------------------------------------------------------------
+
+// 1. Genel Kategori Listesi (Herkese Açık - Yalnızca Aktif Kategoriler)
+app.get('/api/categories', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, name, slug, parent_id, display_order, custom_fields 
+      FROM categories 
+      WHERE is_active = TRUE 
+      ORDER BY display_order ASC, name ASC
+    `);
+
+    // Hiyerarşik ağaç oluştur (Ana kategoriler altında alt kategoriler)
+    const all = result.rows;
+    const rootCategories = all.filter(c => !c.parent_id);
+    const tree = rootCategories.map(root => ({
+      ...root,
+      subcategories: all.filter(sub => sub.parent_id === root.id)
+    }));
+
+    return res.json({ categories: tree, flat: all });
+  } catch (err) {
+    console.error('Kategoriler Getirilemedi:', err);
+    return res.status(500).json({ error: 'Kategoriler listelenirken bir hata oluştu.' });
+  }
+});
+
+// 2. Yönetici Kategori Listesi (Yalnızca Admin - Aktif ve Pasif Tüm Kategoriler)
+app.get('/api/admin/categories', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT c.*, p.name as parent_name
+      FROM categories c
+      LEFT JOIN categories p ON c.parent_id = p.id
+      ORDER BY c.parent_id NULLS FIRST, c.display_order ASC, c.name ASC
+    `);
+    return res.json({ categories: result.rows });
+  } catch (err) {
+    console.error('Admin Kategori Listesi Hatası:', err);
+    return res.status(500).json({ error: 'Kategoriler alınamadı.' });
+  }
+});
+
+// 3. Yeni Kategori / Alt Kategori Ekleme (Yalnızca Admin)
+app.post('/api/admin/categories', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { name, parentId, displayOrder, customFields } = req.body;
+
+    if (!name || name.trim().length < 2) {
+      return res.status(400).json({ error: 'Kategori adı en az 2 karakter olmalıdır.' });
+    }
+
+    // Basit ve güvenli slug üretimi
+    const slug = name
+      .toLowerCase()
+      .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
+      .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c')
+      .replace(/[^a-z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '') + '-' + Date.now().toString().slice(-4);
+
+    const validParentId = parentId && !isNaN(parseInt(parentId, 10)) ? parseInt(parentId, 10) : null;
+    const order = displayOrder && !isNaN(parseInt(displayOrder, 10)) ? parseInt(displayOrder, 10) : 0;
+    const fields = Array.isArray(customFields) ? JSON.stringify(customFields) : '[]';
+
+    const insertResult = await pool.query(`
+      INSERT INTO categories (name, slug, parent_id, display_order, is_active, custom_fields)
+      VALUES ($1, $2, $3, $4, TRUE, $5)
+      RETURNING *
+    `, [name.trim(), slug, validParentId, order, fields]);
+
+    const newCategory = insertResult.rows[0];
+
+    // Denetim kaydı oluştur
+    await pool.query(`
+      INSERT INTO audit_logs (action, performed_by, reason, details)
+      VALUES ($1, $2, $3, $4)
+    `, ['CREATE_CATEGORY', req.user.id, 'Yeni kategori oluşturuldu.', { categoryId: newCategory.id, name: newCategory.name }]);
+
+    return res.status(201).json({
+      message: 'Kategori başarıyla oluşturuldu.',
+      category: newCategory
+    });
+  } catch (err) {
+    console.error('Kategori Ekleme Hatası:', err);
+    return res.status(500).json({ error: 'Kategori oluşturulamadı.' });
+  }
+});
+
+// 4. Kategori Durumu / Pasife Alma & Güncelleme (Yalnızca Admin)
+app.patch('/api/admin/categories/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const catId = parseInt(req.params.id, 10);
+    const { name, displayOrder, isActive, customFields } = req.body;
+
+    if (isNaN(catId)) {
+      return res.status(400).json({ error: 'Geçersiz kategori kimliği.' });
+    }
+
+    const check = await pool.query('SELECT * FROM categories WHERE id = $1', [catId]);
+    if (check.rows.length === 0) {
+      return res.status(404).json({ error: 'Kategori bulunamadı.' });
+    }
+    const currentCat = check.rows[0];
+
+    const updatedName = name && name.trim().length >= 2 ? name.trim() : currentCat.name;
+    const updatedOrder = displayOrder !== undefined ? parseInt(displayOrder, 10) : currentCat.display_order;
+    const updatedActive = typeof isActive === 'boolean' ? isActive : currentCat.is_active;
+    const updatedFields = customFields ? JSON.stringify(customFields) : JSON.stringify(currentCat.custom_fields);
+
+    const updateRes = await pool.query(`
+      UPDATE categories
+      SET name = $1, display_order = $2, is_active = $3, custom_fields = $4, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $5
+      RETURNING *
+    `, [updatedName, updatedOrder, updatedActive, updatedFields, catId]);
+
+    // Denetim kaydı
+    await pool.query(`
+      INSERT INTO audit_logs (action, performed_by, reason, details)
+      VALUES ($1, $2, $3, $4)
+    `, ['UPDATE_CATEGORY', req.user.id, 'Kategori güncellendi/durumu değiştirildi.', { categoryId: catId, isActive: updatedActive }]);
+
+    return res.json({
+      message: 'Kategori başarıyla güncellendi.',
+      category: updateRes.rows[0]
+    });
+  } catch (err) {
+    console.error('Kategori Güncelleme Hatası:', err);
+    return res.status(500).json({ error: 'Kategori güncellenirken bir hata oluştu.' });
   }
 });
 

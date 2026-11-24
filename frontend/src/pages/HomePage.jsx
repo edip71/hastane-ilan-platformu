@@ -2,22 +2,22 @@ import React from 'react';
 import Navbar from '../components/Navbar';
 import { 
   Laptop, Tv, Sofa, Shirt, BookOpen, 
-  HelpCircle, ChevronRight, ShoppingBag, ShieldCheck, Tag 
+  HelpCircle, ChevronRight, ShoppingBag, ShieldCheck, Tag, PlusCircle, Inbox
 } from 'lucide-react';
 
 export default function HomePage({ user, onLogout }) {
 
   const categories = [
-    { id: 'elektronik', name: 'Elektronik', icon: Laptop, count: 'Telefon, Bilgisayar, Tablet' },
-    { id: 'beyaz-esya', name: 'Beyaz Eşya & Küçük Ev Aletleri', icon: Tv, count: 'Buzdolabı, Çamaşır Makinesi, Ütü' },
-    { id: 'ev-yasam', name: 'Ev & Yaşam / Mobilya', icon: Sofa, count: 'Masa, Sandalye, Dolap, Yatak' },
-    { id: 'giyim', name: 'Giyim & Aksesuar', icon: Shirt, count: 'Kıyafet, Çanta, Saat, Ayakkabı' },
-    { id: 'kitap-hobi', name: 'Kitap & Hobi', icon: BookOpen, count: 'Ders Kitapları, Romanlar, Hobi' },
-    { id: 'diger', name: 'Diğer Her Şey', icon: HelpCircle, count: 'Çeşitli İkinci El Eşyalar' },
+    { id: 'elektronik', name: 'Elektronik', icon: Laptop },
+    { id: 'beyaz-esya', name: 'Beyaz Eşya & Küçük Ev Aletleri', icon: Tv },
+    { id: 'ev-yasam', name: 'Ev & Yaşam / Mobilya', icon: Sofa },
+    { id: 'giyim', name: 'Giyim & Aksesuar', icon: Shirt },
+    { id: 'kitap-hobi', name: 'Kitap & Hobi', icon: BookOpen },
+    { id: 'diger', name: 'Diğer Her Şey', icon: HelpCircle },
   ];
 
   return (
-    <div style={styles.page}>
+    <div style={styles.page} className="page-fade">
       <Navbar user={user} onLogout={onLogout} />
 
       <main style={styles.main}>
@@ -55,15 +55,15 @@ export default function HomePage({ user, onLogout }) {
               <div style={styles.infoCard}>
                 <ShieldCheck size={20} color="#16a34a" />
                 <div>
-                  <h4 style={styles.infoTitle}>Güvenli Kurum İçi Alışveriş</h4>
+                  <h4 style={styles.infoTitle}>Güvenli Kurum İçi İlan</h4>
                   <p style={styles.infoText}>
-                    Platformda yalnızca kurum personelleri ilan verebilir ve alışveriş yapabilir.
+                    Platformda yalnızca onaylanmış personeller ilan verebilir ve alışveriş yapabilir.
                   </p>
                 </div>
               </div>
             </aside>
 
-            {/* SAĞ ALAN: Vitrin & İlan Önizleme Alanı */}
+            {/* SAĞ ALAN: Vitrin Alanı */}
             <section style={styles.content}>
               
               {/* Hoş Geldiniz Banner */}
@@ -71,7 +71,7 @@ export default function HomePage({ user, onLogout }) {
                 <div style={styles.bannerText}>
                   <h1 style={styles.bannerTitle}>Şifahane İlan Platformu</h1>
                   <p style={styles.bannerSubtitle}>
-                    İhtiyacınız olan ikinci el elektronik, mobilya ve ev eşyalarını güvenle bulun veya kendi eşyalarınızı listeleyin.
+                    İhtiyacınız olan ikinci el eşyaları güvenle bulun veya kendi eşyalarınızı kolayca listeleyin.
                   </p>
                 </div>
               </div>
@@ -80,70 +80,18 @@ export default function HomePage({ user, onLogout }) {
               <div style={styles.sectionHeader}>
                 <div style={styles.sectionTitleWrapper}>
                   <Tag size={18} color="#004f8c" />
-                  <h2 style={styles.sectionTitle}>Günün Vitrin İlanları</h2>
+                  <h2 style={styles.sectionTitle}>Vitrin İlanları</h2>
                 </div>
-                <span style={styles.sectionBadge}>Sahibinden Tarzı Görünüm</span>
+                <span style={styles.sectionBadge}>Henüz yayında ilan yok</span>
               </div>
 
-              {/* Örnek Vitrin İlan Kartları */}
-              <div style={styles.grid}>
-                
-                <div style={styles.adCard}>
-                  <div style={styles.adImgPlaceholder}>
-                    <span>Elektronik</span>
-                  </div>
-                  <div style={styles.adBody}>
-                    <div style={styles.adPrice}>4.500 TL</div>
-                    <div style={styles.adTitle}>Çalışma Masası ve Ergonomik Koltuk Takımı</div>
-                    <div style={styles.adMeta}>Kategori: Ev & Yaşam</div>
-                    <div style={styles.adFooter}>
-                      <span>Bugün</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={styles.adCard}>
-                  <div style={styles.adImgPlaceholder}>
-                    <span>Beyaz Eşya</span>
-                  </div>
-                  <div style={styles.adBody}>
-                    <div style={styles.adPrice}>7.800 TL</div>
-                    <div style={styles.adTitle}>Tertemiz Mini Buzdolabı (Garantisi Devam Ediyor)</div>
-                    <div style={styles.adMeta}>Kategori: Beyaz Eşya</div>
-                    <div style={styles.adFooter}>
-                      <span>Dün</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={styles.adCard}>
-                  <div style={styles.adImgPlaceholder}>
-                    <span>Kitap & Hobi</span>
-                  </div>
-                  <div style={styles.adBody}>
-                    <div style={styles.adPrice}>550 TL</div>
-                    <div style={styles.adTitle}>Tıbbi Terminoloji ve Anatomi Atlası Seti</div>
-                    <div style={styles.adMeta}>Kategori: Kitap & Hobi</div>
-                    <div style={styles.adFooter}>
-                      <span>22 Kasım</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={styles.adCard}>
-                  <div style={styles.adImgPlaceholder}>
-                    <span>Elektronik</span>
-                  </div>
-                  <div style={styles.adBody}>
-                    <div style={styles.adPrice}>2.200 TL</div>
-                    <div style={styles.adTitle}>24 inç IPS Monitör (HDMI/DisplayPort)</div>
-                    <div style={styles.adMeta}>Kategori: Elektronik</div>
-                    <div style={styles.adFooter}>
-                      <span>20 Kasım</span>
-                    </div>
-                  </div>
-                </div>
-
+              {/* Örnek ilanlar kaldırıldı - Temiz boş durum (Empty State) */}
+              <div style={styles.emptyContainer}>
+                <Inbox size={48} color="#94a3b8" style={{ marginBottom: '12px' }} />
+                <h3 style={styles.emptyTitle}>Henüz Yayında Bir İlan Bulunmuyor</h3>
+                <p style={styles.emptyText}>
+                  İlan oluşturma görevi tamamlandığında kendi ilanlarınızı burada vitrinde sergileyebilirsiniz.
+                </p>
               </div>
 
             </section>
@@ -230,13 +178,12 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '8px 6px',
+    padding: '8px 8px',
     background: 'none',
     border: 'none',
     borderRadius: '4px',
     cursor: 'pointer',
     textAlign: 'left',
-    transition: 'background 0.15s',
   },
   categoryLeft: {
     display: 'flex',
@@ -314,68 +261,32 @@ const styles = {
   },
   sectionBadge: {
     fontSize: '12px',
-    color: '#64748b',
+    color: '#94a3b8',
     fontWeight: '500',
   },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))',
-    gap: '16px',
-  },
-  adCard: {
+  emptyContainer: {
     backgroundColor: '#ffffff',
-    border: '1px solid #e2e8f0',
-    borderRadius: '6px',
-    overflow: 'hidden',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+    border: '1px dashed #cbd5e1',
+    borderRadius: '8px',
+    padding: '60px 20px',
+    textAlign: 'center',
     display: 'flex',
     flexDirection: 'column',
-    transition: 'transform 0.15s, box-shadow 0.15s',
-    cursor: 'pointer',
-  },
-  adImgPlaceholder: {
-    height: '140px',
-    backgroundColor: '#e2e8f0',
-    display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    color: '#64748b',
-    fontSize: '13px',
-    fontWeight: '600',
   },
-  adBody: {
-    padding: '12px',
-    display: 'flex',
-    flexDirection: 'column',
-    flex: 1,
-  },
-  adPrice: {
+  emptyTitle: {
     fontSize: '16px',
-    fontWeight: '800',
-    color: '#004f8c',
-    marginBottom: '4px',
+    fontWeight: '700',
+    color: '#334155',
+    margin: '0 0 6px 0',
   },
-  adTitle: {
+  emptyText: {
     fontSize: '13px',
-    fontWeight: '600',
-    color: '#1e293b',
-    lineHeight: '1.4',
-    marginBottom: '8px',
-    minHeight: '36px',
-  },
-  adMeta: {
-    fontSize: '11px',
     color: '#64748b',
-    marginTop: 'auto',
-  },
-  adFooter: {
-    marginTop: '8px',
-    paddingTop: '8px',
-    borderTop: '1px solid #f1f5f9',
-    fontSize: '11px',
-    color: '#94a3b8',
-    display: 'flex',
-    justifyContent: 'flex-end',
+    maxWidth: '400px',
+    margin: 0,
+    lineHeight: '1.5',
   },
   footer: {
     backgroundColor: '#ffffff',

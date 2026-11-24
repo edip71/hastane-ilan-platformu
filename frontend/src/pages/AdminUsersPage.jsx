@@ -2,12 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Search, Check, X, PauseCircle, PlayCircle, History, 
-  AlertCircle, CheckCircle2, ArrowLeft, LogOut, Shield 
+  AlertCircle, CheckCircle2, ArrowLeft, LogOut, Shield,
+  Users, FolderTree
 } from 'lucide-react';
+import AdminCategoriesTab from '../components/AdminCategoriesTab';
 
 export default function AdminUsersPage({ user, token, onLogout }) {
   const navigate = useNavigate();
 
+  // Ana Panel Sekmesi: 'USERS' (Kullanıcılar) | 'CATEGORIES' (Kategoriler - Görev 06)
+  const [activeTab, setActiveTab] = useState('USERS');
+
+  // Kullanıcılar Sekmesi Durumları
   const [usersList, setUsersList] = useState([]);
   const [filterStatus, setFilterStatus] = useState('pending');
   const [searchQuery, setSearchQuery] = useState('');
@@ -17,11 +23,10 @@ export default function AdminUsersPage({ user, token, onLogout }) {
 
   // Modallar
   const [selectedUser, setSelectedUser] = useState(null);
-  const [modalType, setModalType] = useState(null); // 'REJECT', 'SUSPEND', 'LOGS'
+  const [modalType, setModalType] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
   const [userLogs, setUserLogs] = useState([]);
 
-  // Güvenlik & Yetki Kontrolü: Admin değilse ana sayfaya yönlendir
   useEffect(() => {
     if (!user || user.role !== 'admin') {
       navigate('/giris');
@@ -44,7 +49,7 @@ export default function AdminUsersPage({ user, token, onLogout }) {
       } else {
         setActionError(data.error || 'Kullanıcı listesi alınamadı.');
       }
-    } catch (err) {
+    } catch {
       setActionError('Sunucu bağlantı hatası.');
     } finally {
       setLoading(false);
@@ -52,8 +57,10 @@ export default function AdminUsersPage({ user, token, onLogout }) {
   };
 
   useEffect(() => {
-    fetchUsers();
-  }, [filterStatus]);
+    if (activeTab === 'USERS') {
+      fetchUsers();
+    }
+  }, [filterStatus, activeTab]);
 
   const handleStatusAction = async (targetUserId, action, reason = null) => {
     setActionError('');
@@ -76,7 +83,7 @@ export default function AdminUsersPage({ user, token, onLogout }) {
         closeModal();
         fetchUsers();
       }
-    } catch (err) {
+    } catch {
       setActionError('Sunucuya bağlanılamadı.');
     }
   };
@@ -105,7 +112,7 @@ export default function AdminUsersPage({ user, token, onLogout }) {
   return (
     <div style={styles.page}>
       
-      {/* Özel Admin Header (Kullanıcının isteği: Admin paneli hariç navbar her yerde olacak, admin paneli özel bir alan) */}
+      {/* Özel Admin Header */}
       <header style={styles.adminNav}>
         <div style={styles.adminNavContainer}>
           <div style={styles.adminNavLeft}>
@@ -114,7 +121,26 @@ export default function AdminUsersPage({ user, token, onLogout }) {
               <Shield size={14} />
               <span>Yönetim Paneli</span>
             </div>
+
+            {/* Panel Sekmeleri: Kullanıcılar & Kategoriler (Görev 06) */}
+            <div style={styles.mainNavTabs}>
+              <button
+                onClick={() => setActiveTab('USERS')}
+                style={activeTab === 'USERS' ? styles.mainNavTabActive : styles.mainNavTab}
+              >
+                <Users size={15} />
+                <span>Kullanıcı Yönetimi</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('CATEGORIES')}
+                style={activeTab === 'CATEGORIES' ? styles.mainNavTabActive : styles.mainNavTab}
+              >
+                <FolderTree size={15} />
+                <span>Kategori Yönetimi</span>
+              </button>
+            </div>
           </div>
+
           <div style={styles.adminNavRight}>
             <button onClick={() => navigate('/')} style={styles.btnSiteReturn}>
               <ArrowLeft size={16} />
@@ -132,209 +158,212 @@ export default function AdminUsersPage({ user, token, onLogout }) {
       <main style={styles.main}>
         <div style={styles.container}>
           
-          <div style={styles.pageHeader}>
+          {/* SEKME 1: KULLANICILAR (GÖREV 04) */}
+          {activeTab === 'USERS' && (
             <div>
-              <h1 style={styles.pageTitle}>Kullanıcı Yönetimi ve Onay Kuyruğu</h1>
-              <p style={styles.pageSubtitle}>
-                Kayıt başvurularını inceleyin, hesapları onaylayın, reddedin veya askıya alın.
-              </p>
-            </div>
+              <div style={styles.pageHeader}>
+                <div>
+                  <h1 style={styles.pageTitle}>Kullanıcı Yönetimi ve Onay Kuyruğu</h1>
+                  <p style={styles.pageSubtitle}>
+                    Kayıt başvurularını inceleyin, hesapları onaylayın, reddedin veya askıya alın.
+                  </p>
+                </div>
 
-            {/* Arama ve Filtre Butonları */}
-            <div style={styles.filterSection}>
-              <div style={styles.searchBox}>
-                <Search size={16} color="#64748b" />
-                <input
-                  type="text"
-                  placeholder="Ad, soyad veya e-posta ara..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && fetchUsers()}
-                  style={styles.searchInput}
-                />
-                <button onClick={fetchUsers} style={styles.searchBtn}>Ara</button>
+                <div style={styles.filterSection}>
+                  <div style={styles.searchBox}>
+                    <Search size={16} color="#64748b" />
+                    <input
+                      type="text"
+                      placeholder="Ad, soyad veya e-posta ara..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && fetchUsers()}
+                      style={styles.searchInput}
+                    />
+                    <button onClick={fetchUsers} style={styles.searchBtn}>Ara</button>
+                  </div>
+
+                  <div style={styles.tabs}>
+                    <button
+                      onClick={() => setFilterStatus('pending')}
+                      style={filterStatus === 'pending' ? styles.tabActive : styles.tab}
+                    >
+                      Onay Bekleyenler
+                    </button>
+                    <button
+                      onClick={() => setFilterStatus('active')}
+                      style={filterStatus === 'active' ? styles.tabActive : styles.tab}
+                    >
+                      Aktifler
+                    </button>
+                    <button
+                      onClick={() => setFilterStatus('suspended')}
+                      style={filterStatus === 'suspended' ? styles.tabActive : styles.tab}
+                    >
+                      Askıdakiler
+                    </button>
+                    <button
+                      onClick={() => setFilterStatus('all')}
+                      style={filterStatus === 'all' ? styles.tabActive : styles.tab}
+                    >
+                      Tümü
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              <div style={styles.tabs}>
-                <button
-                  onClick={() => setFilterStatus('pending')}
-                  style={filterStatus === 'pending' ? styles.tabActive : styles.tab}
-                >
-                  Onay Bekleyenler
-                </button>
-                <button
-                  onClick={() => setFilterStatus('active')}
-                  style={filterStatus === 'active' ? styles.tabActive : styles.tab}
-                >
-                  Aktifler
-                </button>
-                <button
-                  onClick={() => setFilterStatus('suspended')}
-                  style={filterStatus === 'suspended' ? styles.tabActive : styles.tab}
-                >
-                  Askıdakiler
-                </button>
-                <button
-                  onClick={() => setFilterStatus('all')}
-                  style={filterStatus === 'all' ? styles.tabActive : styles.tab}
-                >
-                  Tümü
-                </button>
-              </div>
-            </div>
-          </div>
+              {actionSuccess && (
+                <div style={styles.successAlert}>
+                  <CheckCircle2 size={18} />
+                  <span>{actionSuccess}</span>
+                </div>
+              )}
 
-          {/* Bildirimler */}
-          {actionSuccess && (
-            <div style={styles.successAlert}>
-              <CheckCircle2 size={18} />
-              <span>{actionSuccess}</span>
-            </div>
-          )}
+              {actionError && (
+                <div style={styles.errorAlert}>
+                  <AlertCircle size={18} />
+                  <span>{actionError}</span>
+                </div>
+              )}
 
-          {actionError && (
-            <div style={styles.errorAlert}>
-              <AlertCircle size={18} />
-              <span>{actionError}</span>
-            </div>
-          )}
-
-          {/* Kullanıcı Listesi Tablosu */}
-          <div style={styles.tableCard}>
-            {loading ? (
-              <div style={styles.emptyState}>Yükleniyor...</div>
-            ) : usersList.length === 0 ? (
-              <div style={styles.emptyState}>Bu filtreye uygun kullanıcı kaydı bulunamadı.</div>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={styles.table}>
-                  <thead>
-                    <tr style={styles.thRow}>
-                      <th style={styles.th}>Personel</th>
-                      <th style={styles.th}>Rol</th>
-                      <th style={styles.th}>Durum</th>
-                      <th style={styles.th}>Kayıt Tarihi</th>
-                      <th style={{ ...styles.th, textAlign: 'right' }}>İşlemler</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usersList.map((item) => (
-                      <tr key={item.id} style={styles.tr}>
-                        <td style={styles.td}>
-                          <div style={{ fontWeight: '600', color: '#0f172a' }}>
-                            {item.first_name} {item.last_name}
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#64748b' }}>{item.email}</div>
-                        </td>
-                        <td style={styles.td}>
-                          <span style={styles.roleBadge}>
-                            {item.role === 'admin' ? 'Yönetici' : 'Çalışan'}
-                          </span>
-                        </td>
-                        <td style={styles.td}>
-                          <span
-                            style={{
-                              ...styles.statusBadge,
-                              backgroundColor:
-                                item.status === 'active'
-                                  ? '#dcfce7'
-                                  : item.status === 'pending'
-                                  ? '#fef3c7'
-                                  : item.status === 'suspended'
-                                  ? '#fee2e2'
-                                  : '#f1f5f9',
-                              color:
-                                item.status === 'active'
-                                  ? '#166534'
-                                  : item.status === 'pending'
-                                  ? '#92400e'
-                                  : item.status === 'suspended'
-                                  ? '#991b1b'
-                                  : '#475569',
-                            }}
-                          >
-                            {item.status === 'active' && 'Aktif'}
-                            {item.status === 'pending' && 'Onay Bekliyor'}
-                            {item.status === 'suspended' && 'Askıda'}
-                            {item.status === 'rejected' && 'Reddedildi'}
-                          </span>
-                        </td>
-                        <td style={styles.td}>
-                          <span style={{ fontSize: '12px', color: '#64748b' }}>
-                            {new Date(item.created_at).toLocaleDateString('tr-TR')}
-                          </span>
-                        </td>
-                        <td style={{ ...styles.td, textAlign: 'right' }}>
-                          <div style={styles.actionsGroup}>
-                            {/* Onay Bekleyen İşlemleri */}
-                            {item.status === 'pending' && (
-                              <>
-                                <button
-                                  onClick={() => handleStatusAction(item.id, 'APPROVE')}
-                                  style={styles.btnApprove}
-                                  title="Hesabı Onayla"
-                                >
-                                  <Check size={14} />
-                                  <span>Onayla</span>
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setSelectedUser(item);
-                                    setModalType('REJECT');
-                                  }}
-                                  style={styles.btnReject}
-                                  title="Gerekçeyle Reddet"
-                                >
-                                  <X size={14} />
-                                  <span>Reddet</span>
-                                </button>
-                              </>
-                            )}
-
-                            {/* Aktif Hesap İşlemleri */}
-                            {item.status === 'active' && item.id !== user.id && (
-                              <button
-                                onClick={() => {
-                                  setSelectedUser(item);
-                                  setModalType('SUSPEND');
+              <div style={styles.tableCard}>
+                {loading ? (
+                  <div style={styles.emptyState}>Yükleniyor...</div>
+                ) : usersList.length === 0 ? (
+                  <div style={styles.emptyState}>Bu filtreye uygun kullanıcı kaydı bulunamadı.</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={styles.table}>
+                      <thead>
+                        <tr style={styles.thRow}>
+                          <th style={styles.th}>Personel</th>
+                          <th style={styles.th}>Rol</th>
+                          <th style={styles.th}>Durum</th>
+                          <th style={styles.th}>Kayıt Tarihi</th>
+                          <th style={{ ...styles.th, textAlign: 'right' }}>İşlemler</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {usersList.map((item) => (
+                          <tr key={item.id} style={styles.tr}>
+                            <td style={styles.td}>
+                              <div style={{ fontWeight: '600', color: '#0f172a' }}>
+                                {item.first_name} {item.last_name}
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#64748b' }}>{item.email}</div>
+                            </td>
+                            <td style={styles.td}>
+                              <span style={styles.roleBadge}>
+                                {item.role === 'admin' ? 'Yönetici' : 'Çalışan'}
+                              </span>
+                            </td>
+                            <td style={styles.td}>
+                              <span
+                                style={{
+                                  ...styles.statusBadge,
+                                  backgroundColor:
+                                    item.status === 'active'
+                                      ? '#dcfce7'
+                                      : item.status === 'pending'
+                                      ? '#fef3c7'
+                                      : item.status === 'suspended'
+                                      ? '#fee2e2'
+                                      : '#f1f5f9',
+                                  color:
+                                    item.status === 'active'
+                                      ? '#166534'
+                                      : item.status === 'pending'
+                                      ? '#92400e'
+                                      : item.status === 'suspended'
+                                      ? '#991b1b'
+                                      : '#475569',
                                 }}
-                                style={styles.btnSuspend}
-                                title="Hesabı Askıya Al"
                               >
-                                <PauseCircle size={14} />
-                                <span>Askıya Al</span>
-                              </button>
-                            )}
+                                {item.status === 'active' && 'Aktif'}
+                                {item.status === 'pending' && 'Onay Bekliyor'}
+                                {item.status === 'suspended' && 'Askıda'}
+                                {item.status === 'rejected' && 'Reddedildi'}
+                              </span>
+                            </td>
+                            <td style={styles.td}>
+                              <span style={{ fontSize: '12px', color: '#64748b' }}>
+                                {new Date(item.created_at).toLocaleDateString('tr-TR')}
+                              </span>
+                            </td>
+                            <td style={{ ...styles.td, textAlign: 'right' }}>
+                              <div style={styles.actionsGroup}>
+                                {item.status === 'pending' && (
+                                  <>
+                                    <button
+                                      onClick={() => handleStatusAction(item.id, 'APPROVE')}
+                                      style={styles.btnApprove}
+                                      title="Hesabı Onayla"
+                                    >
+                                      <Check size={14} />
+                                      <span>Onayla</span>
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setSelectedUser(item);
+                                        setModalType('REJECT');
+                                      }}
+                                      style={styles.btnReject}
+                                      title="Gerekçeyle Reddet"
+                                    >
+                                      <X size={14} />
+                                      <span>Reddet</span>
+                                    </button>
+                                  </>
+                                )}
 
-                            {/* Askıdaki Hesap İşlemleri */}
-                            {item.status === 'suspended' && (
-                              <button
-                                onClick={() => handleStatusAction(item.id, 'ACTIVATE')}
-                                style={styles.btnActivate}
-                                title="Tekrar Etkinleştir"
-                              >
-                                <PlayCircle size={14} />
-                                <span>Etkinleştir</span>
-                              </button>
-                            )}
+                                {item.status === 'active' && item.id !== user.id && (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedUser(item);
+                                      setModalType('SUSPEND');
+                                    }}
+                                    style={styles.btnSuspend}
+                                    title="Hesabı Askıya Al"
+                                  >
+                                    <PauseCircle size={14} />
+                                    <span>Askıya Al</span>
+                                  </button>
+                                )}
 
-                            {/* Denetim Kayıtları */}
-                            <button
-                              onClick={() => handleViewLogs(item)}
-                              style={styles.btnLogs}
-                              title="İşlem Geçmişi"
-                            >
-                              <History size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                                {item.status === 'suspended' && (
+                                  <button
+                                    onClick={() => handleStatusAction(item.id, 'ACTIVATE')}
+                                    style={styles.btnActivate}
+                                    title="Tekrar Etkinleştir"
+                                  >
+                                    <PlayCircle size={14} />
+                                    <span>Etkinleştir</span>
+                                  </button>
+                                )}
+
+                                <button
+                                  onClick={() => handleViewLogs(item)}
+                                  style={styles.btnLogs}
+                                  title="İşlem Geçmişi"
+                                >
+                                  <History size={14} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {/* SEKME 2: KATEGORİ YÖNETİMİ (GÖREV 06) */}
+          {activeTab === 'CATEGORIES' && (
+            <AdminCategoriesTab token={token} />
+          )}
 
         </div>
       </main>
@@ -409,6 +438,8 @@ export default function AdminUsersPage({ user, token, onLogout }) {
                         {log.action === 'SUSPEND_USER' && '⏸️ Askıya Alındı'}
                         {log.action === 'ACTIVATE_USER' && '▶️ Etkinleştirildi'}
                         {log.action === 'REGISTER_APPLICATION' && '📝 Kayıt Başvurusu'}
+                        {log.action === 'CREATE_CATEGORY' && '📁 Kategori Oluşturuldu'}
+                        {log.action === 'UPDATE_CATEGORY' && '⚙️ Kategori Güncellendi'}
                       </span>
                       <span style={{ fontSize: '11px', color: '#94a3b8' }}>
                         {new Date(log.created_at).toLocaleString('tr-TR')}
@@ -449,7 +480,7 @@ const styles = {
   adminNav: {
     backgroundColor: '#002b4d',
     borderBottom: '1px solid #001f38',
-    padding: '12px 16px',
+    padding: '10px 16px',
     color: '#ffffff',
   },
   adminNavContainer: {
@@ -458,11 +489,14 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: '12px',
   },
   adminNavLeft: {
     display: 'flex',
     alignItems: 'center',
     gap: '16px',
+    flexWrap: 'wrap',
   },
   adminBadge: {
     display: 'flex',
@@ -474,6 +508,37 @@ const styles = {
     fontSize: '12px',
     fontWeight: '600',
     color: '#e2e8f0',
+  },
+  mainNavTabs: {
+    display: 'flex',
+    gap: '6px',
+    marginLeft: '10px',
+  },
+  mainNavTab: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '6px 12px',
+    backgroundColor: 'transparent',
+    color: '#cbd5e1',
+    border: 'none',
+    borderRadius: '4px',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+  },
+  mainNavTabActive: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '6px 12px',
+    backgroundColor: '#004f8c',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '4px',
+    fontSize: '13px',
+    fontWeight: '700',
+    cursor: 'pointer',
   },
   adminNavRight: {
     display: 'flex',
