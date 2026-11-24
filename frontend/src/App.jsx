@@ -5,6 +5,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import AdminUsersPage from './pages/AdminUsersPage';
 import HomePage from './pages/HomePage';
 
@@ -84,6 +85,10 @@ export default function App() {
         <Route
           path="/sifremi-unuttum"
           element={currentUser ? <Navigate to="/" replace /> : <ForgotPasswordPage />}
+        />
+        <Route
+          path="/sifremi-sifirla/:token"
+          element={currentUser ? <Navigate to="/" replace /> : <ResetPasswordPage />}
         />
 
         {/* Korumalı Çalışan Ana Sayfası */}

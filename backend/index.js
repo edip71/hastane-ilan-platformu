@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import helmet from 'helmet';
+import crypto from 'crypto';
 
 dotenv.config();
 
@@ -56,6 +57,15 @@ const registerLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Güvenlik: Şifre Sıfırlama İstekleri için Kötüye Kullanım / Spam Engeli (15 dakikada maks 5 istek)
+const passwordResetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { error: 'Çok fazla şifre sıfırlama talebinde bulundunuz. Lütfen 15 dakika sonra tekrar deneyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Middleware'ler
 app.use(cors());
 app.use(express.json({ limit: '10kb' })); // Güvenlik: Aşırı büyük gövde saldırılarını engellemek için sınır
@@ -97,8 +107,17 @@ async function initDb() {
         reason TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS password_resets (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token VARCHAR(128) NOT NULL UNIQUE,
+        expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        used BOOLEAN DEFAULT FALSE NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
     `);
-    console.log('✅ "users" ve "audit_logs" tabloları hazır!');
+    console.log('✅ "users", "audit_logs" ve "password_resets" tabloları hazır!');
     client.release();
   } catch (err) {
     console.error('❌ Veritabanı bağlantı hatası:', err.message);
@@ -263,6 +282,187 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
   } catch (error) {
     console.error('Giriş hatası:', error);
     res.status(500).json({ error: 'Sunucuda bir hata oluştu. Lütfen tekrar deneyin.' });
+  }
+});
+
+// GÖREV 05: ŞİFREMİ UNUTTUM & SIFIRLAMA ENDPOINT'LERİ
+
+// 1. Şifre Sıfırlama Talebi Gönder
+app.post('/api/auth/forgot-password', passwordResetLimiter, async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: 'Lütfen geçerli bir e-posta adresi girin.' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+
+    // KVKK & Güvenlik Kuralı (Anti-Enumeration):
+    // Kullanıcı varsa veya yoksa aynı başarı mesajı döner. Böylece saldırganlar hastane maillerini tarayamaz.
+    const genericSuccessResponse = {
+      success: true,
+      message: 'Eğer bu kurumsal e-posta adresi sistemimizde kayıtlı ise, şifre sıfırlama bağlantısı gönderilmiştir.',
+    };
+
+    const userResult = await pool.query('SELECT id, email, status FROM users WHERE email = $1', [cleanEmail]);
+
+    if (userResult.rows.length === 0) {
+      return res.json(genericSuccessResponse);
+    }
+
+    const targetUser = userResult.rows[0];
+
+    // Hesap onaylanmamış veya askıdaysa şifre sıfırlama linki oluşturulmaz
+    if (targetUser.status !== 'active') {
+      return res.json(genericSuccessResponse);
+    }
+
+    // Kriptografik rastgele ve güvenli tek kullanımlık token üretimi (64 karakter hex)
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    
+    // Geçerlilik süresi: Tam 15 dakika (900.000 ms)
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+    // Varsa bu kullanıcının daha önceki kullanılmamış eski tokenlarını geçersiz kıl
+    await pool.query('UPDATE password_resets SET used = TRUE WHERE user_id = $1 AND used = FALSE', [targetUser.id]);
+
+    // Yeni token kaydı
+    await pool.query(
+      `INSERT INTO password_resets (user_id, token, expires_at, used)
+       VALUES ($1, $2, $3, FALSE)`,
+      [targetUser.id, resetToken, expiresAt]
+    );
+
+    const resetLink = `http://localhost:5173/sifremi-sifirla/${resetToken}`;
+    console.log(`\n🔑 [ŞİFRE SIFIRLAMA TALEBİ] E-posta: ${cleanEmail}`);
+    console.log(`🔗 Sıfırlama Bağlantısı: ${resetLink}`);
+    console.log(`⏳ Geçerlilik Süresi: 15 dakika\n`);
+
+    // Geliştirme ortamında kolay test edilebilmesi için devToken da yanıta eklenir
+    return res.json({
+      ...genericSuccessResponse,
+      devToken: resetToken,
+      resetLink,
+    });
+  } catch (error) {
+    console.error('Şifre sıfırlama talebi hatası:', error);
+    res.status(500).json({ error: 'Sunucuda bir hata oluştu. Lütfen tekrar deneyin.' });
+  }
+});
+
+// 2. Sıfırlama Token'ının Geçerliliğini Doğrula
+app.get('/api/auth/verify-reset-token/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    if (!token || token.length < 32) {
+      return res.status(400).json({ valid: false, error: 'Geçersiz veya bozuk sıfırlama bağlantısı.' });
+    }
+
+    const tokenResult = await pool.query(
+      `SELECT pr.id, pr.user_id, pr.expires_at, pr.used, u.email, u.first_name, u.last_name
+       FROM password_resets pr
+       JOIN users u ON pr.user_id = u.id
+       WHERE pr.token = $1`,
+      [token]
+    );
+
+    if (tokenResult.rows.length === 0) {
+      return res.status(404).json({ valid: false, error: 'Sıfırlama bağlantısı bulunamadı veya geçersiz.' });
+    }
+
+    const record = tokenResult.rows[0];
+
+    if (record.used) {
+      return res.status(400).json({ valid: false, error: 'Bu sıfırlama bağlantısı daha önce kullanılmış.' });
+    }
+
+    if (new Date() > new Date(record.expires_at)) {
+      return res.status(400).json({ valid: false, error: 'Sıfırlama bağlantısının süresi dolmuş (15 dakika sınırı).' });
+    }
+
+    return res.json({
+      valid: true,
+      message: 'Bağlantı geçerli.',
+      email: record.email,
+      firstName: record.first_name,
+    });
+  } catch (error) {
+    console.error('Token doğrulama hatası:', error);
+    res.status(500).json({ valid: false, error: 'Sunucu hatası oluştu.' });
+  }
+});
+
+// 3. Yeni Şifreyi Kaydet ve Token'ı İptal Et
+app.post('/api/auth/reset-password', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { token, newPassword, confirmPassword } = req.body;
+
+    if (!token || !newPassword || !confirmPassword) {
+      return res.status(400).json({ error: 'Lütfen tüm alanları doldurun.' });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ error: 'Girdiğiniz yeni şifreler birbiriyle uyuşmuyor.' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'Yeni şifreniz en az 6 karakter olmalıdır.' });
+    }
+
+    // Token kontrolü
+    const tokenResult = await client.query(
+      `SELECT pr.id, pr.user_id, pr.expires_at, pr.used
+       FROM password_resets pr
+       WHERE pr.token = $1`,
+      [token]
+    );
+
+    if (tokenResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Geçersiz veya bulunamayan sıfırlama bağlantısı.' });
+    }
+
+    const record = tokenResult.rows[0];
+
+    if (record.used) {
+      return res.status(400).json({ error: 'Bu bağlantı daha önce kullanılmış. Lütfen yeni talepte bulunun.' });
+    }
+
+    if (new Date() > new Date(record.expires_at)) {
+      return res.status(400).json({ error: 'Bu bağlantının süresi dolmuştur (15 dakika). Lütfen yeni talepte bulunun.' });
+    }
+
+    // Şifreyi bcrypt ile güvenli hash'le
+    const saltRounds = 10;
+    const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
+
+    // Atomik Transaction: Şifreyi güncelle ve token'ı used=true yap
+    await client.query('BEGIN');
+
+    await client.query(
+      `UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [newPasswordHash, record.user_id]
+    );
+
+    await client.query(
+      `UPDATE password_resets SET used = TRUE WHERE id = $1`,
+      [record.id]
+    );
+
+    await client.query('COMMIT');
+
+    return res.json({
+      success: true,
+      message: 'Şifreniz başarıyla güncellendi! Yeni şifrenizle kurumsal giriş yapabilirsiniz.',
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Şifre güncelleme hatası:', error);
+    res.status(500).json({ error: 'Şifre güncellenirken sunucuda bir hata oluştu.' });
+  } finally {
+    client.release();
   }
 });
 
