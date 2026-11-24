@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { User, Mail, Lock, ShieldCheck, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { User, Mail, Lock, CheckCircle2, AlertCircle, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import AuthNavbar from '../components/AuthNavbar';
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -13,6 +14,7 @@ export default function RegisterPage() {
   });
 
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState({});
   const [generalError, setGeneralError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -45,7 +47,7 @@ export default function RegisterPage() {
     }
 
     if (!formData.termsAccepted) {
-      errors.termsAccepted = 'Kullanım koşullarını onaylamalısınız.';
+      errors.termsAccepted = 'Kullanım koşullarını ve KVKK metnini onaylamalısınız.';
     }
 
     if (Object.keys(errors).length > 0) {
@@ -70,228 +72,260 @@ export default function RegisterPage() {
         setSuccessMessage(data.message || 'Başvurunuz başarıyla alındı! Yönetici onayı bekleniyor.');
       }
     } catch (err) {
-      setGeneralError('Sunucuya bağlanılamadı.');
+      setGeneralError('Sunucuya bağlanılamadı. Lütfen sunucunun açık olduğundan emin olun.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.card}>
-        <div style={styles.header}>
-          <div style={styles.iconCircle}>
-            <ShieldCheck size={32} color="#0284c7" />
-          </div>
-          <h1 style={styles.title}>Hastane İlan Platformu</h1>
-          <p style={styles.subtitle}>Çalışan Kayıt Formu</p>
-        </div>
+    <div style={styles.pageWrapper}>
+      <AuthNavbar />
 
-        {generalError && (
-          <div style={styles.errorAlert}>
-            <AlertCircle size={20} style={{ marginRight: 8, flexShrink: 0 }} />
-            <span>{generalError}</span>
+      <main style={styles.mainArea}>
+        <div style={styles.card}>
+          <div style={styles.header}>
+            <h1 style={styles.title}>Birlikte daha iyiye.</h1>
+            <p style={styles.subtitle}>
+              Kurumsal hesabınızı oluşturun, <span style={{ color: '#0369a1', fontWeight: '600' }}>Şifahane</span> ailesine katılın.
+            </p>
           </div>
-        )}
 
-        {successMessage ? (
-          <div style={styles.successBox}>
-            <CheckCircle2 size={48} color="#16a34a" style={{ marginBottom: 12 }} />
-            <h3 style={{ color: '#16a34a', margin: '0 0 8px 0', fontSize: 18 }}>Başvuru Alındı</h3>
-            <p style={{ color: '#374151', margin: 0, fontSize: 14, textAlign: 'center' }}>
-              {successMessage}
-            </p>
-            <p style={{ color: '#64748b', fontSize: '12px', marginTop: '8px' }}>
-              Hesabınız onaylandıktan sonra kurumsal giriş yapabileceksiniz.
-            </p>
-            <Link to="/giris" style={{ ...styles.button, textDecoration: 'none', display: 'inline-block', marginTop: 16 }}>
-              Giriş Ekranına Dön
-            </Link>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} style={styles.form}>
-            <div style={styles.row}>
-              <div style={{ ...styles.formGroup, flex: 1 }}>
-                <label style={styles.label}>Ad</label>
+          {generalError && (
+            <div style={styles.errorAlert}>
+              <AlertCircle size={18} style={{ marginRight: 8, flexShrink: 0 }} />
+              <span>{generalError}</span>
+            </div>
+          )}
+
+          {successMessage ? (
+            <div style={styles.successBox}>
+              <CheckCircle2 size={54} color="#16a34a" style={{ marginBottom: 12 }} />
+              <h3 style={{ color: '#16a34a', margin: '0 0 8px 0', fontSize: '20px', fontWeight: '700' }}>
+                Kayıt Başvurunuz Alındı
+              </h3>
+              <p style={{ color: '#334155', margin: '0 0 8px 0', fontSize: '14px', textAlign: 'center', lineHeight: '1.5' }}>
+                {successMessage}
+              </p>
+              <p style={{ color: '#64748b', fontSize: '13px', textAlign: 'center', margin: '0 0 20px 0' }}>
+                Hastane yönetimi (Başhekimlik) başvurunuzu onayladığında kurumsal e-postanız ve şifrenizle giriş yapabileceksiniz.
+              </p>
+              <Link to="/giris" style={styles.returnBtn}>
+                Giriş Ekranına Git
+              </Link>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} style={styles.form}>
+              {/* Ad & Soyad - Yan Yana 2 Sütun */}
+              <div style={styles.twoColRow}>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Ad</label>
+                  <div style={styles.inputWrapper}>
+                    <User size={18} color="#94a3b8" style={styles.inputIcon} />
+                    <input
+                      type="text"
+                      name="firstName"
+                      value={formData.firstName}
+                      onChange={handleChange}
+                      placeholder="Adınız"
+                      className="auth-input"
+                      style={fieldErrors.firstName ? { ...styles.input, ...styles.inputError } : styles.input}
+                    />
+                  </div>
+                  {fieldErrors.firstName && <span style={styles.errorText}>{fieldErrors.firstName}</span>}
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Soyad</label>
+                  <div style={styles.inputWrapper}>
+                    <User size={18} color="#94a3b8" style={styles.inputIcon} />
+                    <input
+                      type="text"
+                      name="lastName"
+                      value={formData.lastName}
+                      onChange={handleChange}
+                      placeholder="Soyadınız"
+                      className="auth-input"
+                      style={fieldErrors.lastName ? { ...styles.input, ...styles.inputError } : styles.input}
+                    />
+                  </div>
+                  {fieldErrors.lastName && <span style={styles.errorText}>{fieldErrors.lastName}</span>}
+                </div>
+              </div>
+
+              {/* Kurumsal E-posta */}
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Kurumsal E-posta</label>
                 <div style={styles.inputWrapper}>
-                  <User size={18} color="#9ca3af" style={styles.inputIcon} />
+                  <Mail size={18} color="#94a3b8" style={styles.inputIcon} />
                   <input
-                    type="text"
-                    name="firstName"
-                    value={formData.firstName}
+                    type="email"
+                    name="email"
+                    value={formData.email}
                     onChange={handleChange}
-                    placeholder="Adınız"
-                    style={fieldErrors.firstName ? { ...styles.input, ...styles.inputError } : styles.input}
+                    placeholder="ad.soyad@hastane.com"
+                    className="auth-input"
+                    style={fieldErrors.email ? { ...styles.input, ...styles.inputError } : styles.input}
                   />
                 </div>
-                {fieldErrors.firstName && <span style={styles.errorText}>{fieldErrors.firstName}</span>}
+                {fieldErrors.email && <span style={styles.errorText}>{fieldErrors.email}</span>}
               </div>
 
-              <div style={{ ...styles.formGroup, flex: 1 }}>
-                <label style={styles.label}>Soyad</label>
+              {/* Şifre */}
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Şifre</label>
                 <div style={styles.inputWrapper}>
-                  <User size={18} color="#9ca3af" style={styles.inputIcon} />
+                  <Lock size={18} color="#94a3b8" style={styles.inputIcon} />
                   <input
-                    type="text"
-                    name="lastName"
-                    value={formData.lastName}
+                    type={showPassword ? 'text' : 'password'}
+                    name="password"
+                    value={formData.password}
                     onChange={handleChange}
-                    placeholder="Soyadınız"
-                    style={fieldErrors.lastName ? { ...styles.input, ...styles.inputError } : styles.input}
+                    placeholder="Şifrenizi oluşturun"
+                    className="auth-input"
+                    style={fieldErrors.password ? { ...styles.input, ...styles.inputError } : styles.input}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={styles.eyeBtn}
+                    aria-label="Şifreyi Göster/Gizle"
+                  >
+                    {showPassword ? <EyeOff size={18} color="#64748b" /> : <Eye size={18} color="#64748b" />}
+                  </button>
                 </div>
-                {fieldErrors.lastName && <span style={styles.errorText}>{fieldErrors.lastName}</span>}
+                <span style={styles.hintText}>
+                  En az 6 karakter, bir büyük harf ve bir rakam kullanın.
+                </span>
+                {fieldErrors.password && <span style={styles.errorText}>{fieldErrors.password}</span>}
               </div>
-            </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Kurumsal E-posta</label>
-              <div style={styles.inputWrapper}>
-                <Mail size={18} color="#9ca3af" style={styles.inputIcon} />
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  placeholder="ornek@hastane.gov.tr"
-                  style={fieldErrors.email ? { ...styles.input, ...styles.inputError } : styles.input}
-                />
+              {/* Şifre Doğrulama */}
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Şifre Doğrulama</label>
+                <div style={styles.inputWrapper}>
+                  <Lock size={18} color="#94a3b8" style={styles.inputIcon} />
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    name="confirmPassword"
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    placeholder="Şifrenizi tekrar girin"
+                    className="auth-input"
+                    style={fieldErrors.confirmPassword ? { ...styles.input, ...styles.inputError } : styles.input}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    style={styles.eyeBtn}
+                    aria-label="Şifreyi Göster/Gizle"
+                  >
+                    {showConfirmPassword ? <EyeOff size={18} color="#64748b" /> : <Eye size={18} color="#64748b" />}
+                  </button>
+                </div>
+                {fieldErrors.confirmPassword && (
+                  <span style={styles.errorText}>{fieldErrors.confirmPassword}</span>
+                )}
               </div>
-              {fieldErrors.email && <span style={styles.errorText}>{fieldErrors.email}</span>}
-            </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Şifre</label>
-              <div style={styles.inputWrapper}>
-                <Lock size={18} color="#9ca3af" style={styles.inputIcon} />
+              {/* KVKK ve Şartlar Onay Kutusu */}
+              <div style={styles.checkboxGroup}>
                 <input
-                  type={showPassword ? 'text' : 'password'}
-                  name="password"
-                  value={formData.password}
+                  type="checkbox"
+                  name="termsAccepted"
+                  id="termsAccepted"
+                  checked={formData.termsAccepted}
                   onChange={handleChange}
-                  placeholder="••••••••"
-                  style={fieldErrors.password ? { ...styles.input, ...styles.inputError } : styles.input}
+                  style={styles.checkbox}
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  style={styles.eyeBtn}
-                >
-                  {showPassword ? <EyeOff size={18} color="#6b7280" /> : <Eye size={18} color="#6b7280" />}
-                </button>
+                <label htmlFor="termsAccepted" style={styles.checkboxLabel}>
+                  <span style={styles.linkInline}>Kullanım Koşulları</span>'nı ve{' '}
+                  <span style={styles.linkInline}>KVKK Aydınlatma Metni</span>'ni okudum, kabul ediyorum. <span style={{ color: '#dc2626' }}>*</span>
+                </label>
               </div>
-              {fieldErrors.password && <span style={styles.errorText}>{fieldErrors.password}</span>}
-            </div>
-
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Şifre Tekrarı</label>
-              <div style={styles.inputWrapper}>
-                <Lock size={18} color="#9ca3af" style={styles.inputIcon} />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  name="confirmPassword"
-                  value={formData.confirmPassword}
-                  onChange={handleChange}
-                  placeholder="••••••••"
-                  style={fieldErrors.confirmPassword ? { ...styles.input, ...styles.inputError } : styles.input}
-                />
-              </div>
-              {fieldErrors.confirmPassword && (
-                <span style={styles.errorText}>{fieldErrors.confirmPassword}</span>
+              {fieldErrors.termsAccepted && (
+                <span style={{ ...styles.errorText, marginTop: '-6px' }}>{fieldErrors.termsAccepted}</span>
               )}
-            </div>
 
-            <div style={styles.checkboxGroup}>
-              <input
-                type="checkbox"
-                name="termsAccepted"
-                id="termsAccepted"
-                checked={formData.termsAccepted}
-                onChange={handleChange}
-                style={{ cursor: 'pointer', marginTop: 3 }}
-              />
-              <label htmlFor="termsAccepted" style={styles.checkboxLabel}>
-                Hastane kurumsal ilan platformu Kullanım Koşulları'nı ve KVKK Aydınlatma Metni'ni okudum, onaylıyorum.
-              </label>
-            </div>
-            {fieldErrors.termsAccepted && (
-              <span style={{ ...styles.errorText, marginTop: -8 }}>{fieldErrors.termsAccepted}</span>
-            )}
+              {/* Kayıt Ol Butonu */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="auth-button"
+                style={styles.submitBtn}
+              >
+                <span>{loading ? 'Hesap Oluşturuluyor...' : 'Kayıt Ol'}</span>
+                {!loading && <ArrowRight size={18} />}
+              </button>
+            </form>
+          )}
 
-            <button type="submit" disabled={loading} style={styles.button}>
-              {loading ? 'Kayıt Yapılıyor...' : 'Kayıt Ol'}
-            </button>
-          </form>
-        )}
-
-        <div style={styles.footer}>
-          <p style={styles.footerText}>
-            Zaten bir hesabınız var mı?{' '}
-            <Link to="/giris" style={styles.linkText}>
-              Giriş Yap
+          {/* Alt Bilgi */}
+          <div style={styles.footer}>
+            <span style={styles.footerText}>Zaten bir hesabınız var mı? </span>
+            <Link to="/giris" style={styles.loginLink}>
+              Giriş yap
             </Link>
-          </p>
+          </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
 
 const styles = {
-  container: {
+  pageWrapper: {
     minHeight: '100vh',
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#edf4fa',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  mainArea: {
+    flex: 1,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '24px 16px',
+    padding: '36px 16px',
     boxSizing: 'border-box',
   },
   card: {
     backgroundColor: '#ffffff',
     borderRadius: '16px',
-    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.08)',
+    boxShadow: '0 12px 32px -4px rgba(15, 23, 42, 0.06)',
     width: '100%',
-    maxWidth: '460px',
-    padding: '32px 28px',
+    maxWidth: '520px',
+    padding: '36px 36px',
     border: '1px solid #e2e8f0',
     boxSizing: 'border-box',
   },
   header: {
-    textAlign: 'center',
-    marginBottom: '24px',
-  },
-  iconCircle: {
-    width: '56px',
-    height: '56px',
-    backgroundColor: '#e0f2fe',
-    borderRadius: '50%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    margin: '0 auto 12px auto',
+    marginBottom: '26px',
+    textAlign: 'left',
   },
   title: {
-    fontSize: '22px',
-    fontWeight: '700',
-    color: '#0f172a',
+    fontSize: '28px',
+    fontWeight: '800',
+    color: '#0a2540',
     margin: '0 0 6px 0',
+    letterSpacing: '-0.5px',
   },
   subtitle: {
     fontSize: '14px',
-    color: '#64748b',
+    color: '#627d98',
     margin: 0,
+    lineHeight: '1.5',
   },
   form: {
     display: 'flex',
     flexDirection: 'column',
     gap: '16px',
   },
-  row: {
+  twoColRow: {
     display: 'flex',
-    gap: '12px',
+    gap: '14px',
   },
   formGroup: {
+    flex: 1,
     display: 'flex',
     flexDirection: 'column',
     gap: '6px',
@@ -299,7 +333,7 @@ const styles = {
   label: {
     fontSize: '13px',
     fontWeight: '600',
-    color: '#334155',
+    color: '#334e68',
   },
   inputWrapper: {
     position: 'relative',
@@ -309,92 +343,123 @@ const styles = {
   inputIcon: {
     position: 'absolute',
     left: '12px',
-  },
-  eyeBtn: {
-    position: 'absolute',
-    right: '10px',
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    padding: '4px',
-    display: 'flex',
-    alignItems: 'center',
+    pointerEvents: 'none',
   },
   input: {
     width: '100%',
-    padding: '10px 12px 10px 38px',
+    padding: '11px 14px 11px 38px',
     borderRadius: '8px',
     border: '1px solid #cbd5e1',
     fontSize: '14px',
+    color: '#0f172a',
     outline: 'none',
+    backgroundColor: '#ffffff',
+    transition: 'all 0.15s ease',
     boxSizing: 'border-box',
   },
   inputError: {
     borderColor: '#ef4444',
-    backgroundColor: '#fef2f2',
+    backgroundColor: '#fff5f5',
+  },
+  eyeBtn: {
+    position: 'absolute',
+    right: '12px',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    padding: 0,
+    display: 'flex',
+    alignItems: 'center',
+  },
+  hintText: {
+    fontSize: '11px',
+    color: '#829ab1',
+    marginTop: '2px',
   },
   errorText: {
     fontSize: '12px',
-    color: '#ef4444',
+    color: '#dc2626',
+    fontWeight: '500',
   },
   checkboxGroup: {
     display: 'flex',
     alignItems: 'flex-start',
-    gap: '8px',
+    gap: '10px',
     marginTop: '4px',
   },
+  checkbox: {
+    marginTop: '3px',
+    cursor: 'pointer',
+    width: '16px',
+    height: '16px',
+    accentColor: '#0284c7',
+  },
   checkboxLabel: {
-    fontSize: '12px',
-    color: '#475569',
-    lineHeight: '1.4',
+    fontSize: '12.5px',
+    color: '#486581',
+    lineHeight: '1.45',
     cursor: 'pointer',
   },
-  button: {
-    backgroundColor: '#0284c7',
+  linkInline: {
+    color: '#0284c7',
+    fontWeight: '600',
+    textDecoration: 'underline',
+  },
+  submitBtn: {
+    width: '100%',
+    padding: '13px 20px',
+    backgroundColor: '#004f8c',
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
-    padding: '12px',
-    fontSize: '15px',
+    fontSize: '14px',
     fontWeight: '600',
     cursor: 'pointer',
-    marginTop: '8px',
-    textAlign: 'center',
-  },
-  errorAlert: {
-    backgroundColor: '#fef2f2',
-    color: '#b91c1c',
-    border: '1px solid #fecaca',
-    borderRadius: '8px',
-    padding: '12px',
-    fontSize: '13px',
     display: 'flex',
     alignItems: 'center',
-    marginBottom: '16px',
-  },
-  successBox: {
-    backgroundColor: '#f0fdf4',
-    border: '1px solid #bbf7d0',
-    borderRadius: '12px',
-    padding: '24px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    marginTop: '6px',
+    transition: 'background-color 0.15s ease',
   },
   footer: {
     textAlign: 'center',
-    marginTop: '20px',
-    borderTop: '1px solid #f1f5f9',
-    paddingTop: '16px',
+    marginTop: '24px',
+    fontSize: '13px',
   },
   footerText: {
-    fontSize: '13px',
-    color: '#64748b',
-    margin: 0,
+    color: '#627d98',
   },
-  linkText: {
+  loginLink: {
     color: '#0284c7',
-    fontWeight: '600',
+    fontWeight: '700',
     textDecoration: 'none',
+  },
+  errorAlert: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '12px 14px',
+    borderRadius: '8px',
+    backgroundColor: '#fef2f2',
+    border: '1px solid #fecaca',
+    color: '#b91c1c',
+    fontSize: '13px',
+    marginBottom: '16px',
+  },
+  successBox: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    padding: '20px 0',
+  },
+  returnBtn: {
+    padding: '11px 24px',
+    backgroundColor: '#004f8c',
+    color: '#ffffff',
+    borderRadius: '8px',
+    textDecoration: 'none',
+    fontSize: '14px',
+    fontWeight: '600',
+    transition: 'background-color 0.15s',
   },
 };

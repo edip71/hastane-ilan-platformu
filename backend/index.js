@@ -434,6 +434,15 @@ app.post('/api/auth/reset-password', async (req, res) => {
       return res.status(400).json({ error: 'Bu bağlantının süresi dolmuştur (15 dakika). Lütfen yeni talepte bulunun.' });
     }
 
+    // Kullanıcının mevcut şifresini kontrol et: Eski şifre ile yeni şifre AYNI OLAMAZ!
+    const userResult = await client.query('SELECT password_hash FROM users WHERE id = $1', [record.user_id]);
+    if (userResult.rows.length > 0) {
+      const isSamePassword = await bcrypt.compare(newPassword, userResult.rows[0].password_hash);
+      if (isSamePassword) {
+        return res.status(400).json({ error: 'Yeni şifreniz mevcut (eski) şifreniz ile aynı olamaz. Lütfen farklı ve güvenli bir şifre belirleyin.' });
+      }
+    }
+
     // Şifreyi bcrypt ile güvenli hash'le
     const saltRounds = 10;
     const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
