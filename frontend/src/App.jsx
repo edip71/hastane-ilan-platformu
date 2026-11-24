@@ -6,6 +6,7 @@ import RegisterPage from './pages/RegisterPage';
 import AdminUsersPage from './pages/AdminUsersPage';
 import CreateListingPage from './pages/CreateListingPage';
 import ListingDetailPage from './pages/ListingDetailPage';
+import PageLoader from './components/PageLoader';
 
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem('token'));
@@ -58,6 +59,8 @@ export default function App() {
 
   return (
     <Router>
+      {/* Sayfa Geçişlerinde Kurumsal Şifahane Logolu Açılış Animasyonu */}
+      <PageLoader />
       <Routes>
         {/* Ana Sayfa - Yalnızca Giriş Yapmış Kullanıcılara Açık */}
         <Route 
