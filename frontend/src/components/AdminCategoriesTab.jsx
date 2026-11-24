@@ -49,9 +49,24 @@ export default function AdminCategoriesTab({ token }) {
     fetchCategories();
   }, []);
 
+  const handleOpenAddModal = () => {
+    const maxOrder = categories.reduce((max, c) => Math.max(max, c.display_order || 0), 0);
+    setNewCatOrder(String(maxOrder + 1));
+    setNewCatName('');
+    setNewCatParentId('');
+    setCustomFields([]);
+    setError('');
+    setShowAddModal(true);
+  };
+
   const handleAddField = () => {
     if (!fieldName.trim()) return;
     const opts = fieldOptions.split(',').map(o => o.trim()).filter(Boolean);
+    if (fieldType === 'select' && opts.length === 0) {
+      setError('Seçmeli alan için en az 1 seçenek girmelisiniz (Virgülle ayırın).');
+      return;
+    }
+    setError('');
     setCustomFields([
       ...customFields,
       {
@@ -150,7 +165,7 @@ export default function AdminCategoriesTab({ token }) {
           </p>
         </div>
         <button 
-          onClick={() => setShowAddModal(true)} 
+          onClick={handleOpenAddModal} 
           style={styles.btnAdd}
         >
           <Plus size={16} />

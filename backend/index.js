@@ -625,8 +625,61 @@ app.post('/api/admin/categories', authenticateToken, requireAdmin, async (req, r
       return res.status(400).json({ error: 'Kategori adı en az 2 karakter olmalıdır.' });
     }
 
-    // Basit ve güvenli slug üretimi
-    const slug = name
+    const trimmedName = name.trim();
+    const validParentId = parentId && !isNaN(parseInt(parentId, 10)) ? parseInt(parentId, 10) : null;
+
+    // 1. Uç Nokta Denetimi: Aynı seviyede aynı isimde mükerrer kategori kontrolü
+    const duplicateCheck = await pool.query(
+      'SELECT id FROM categories WHERE LOWER(name) = LOWER($1) AND (parent_id IS NOT DISTINCT FROM $2)',
+      [trimmedName, validParentId]
+    );
+
+    if (duplicateCheck.rows.length > 0) {
+      return res.status(400).json({ 
+        error: `"${trimmedName}" adında bir kategori bu seviyede zaten mevcut.` 
+      });
+    }
+
+    // 2. Sıra No Kontrolü: Negatif sayı engeli & Otomatik sıra atama
+    let order = 1;
+    if (displayOrder !== undefined && displayOrder !== null && displayOrder !== '') {
+      const parsedOrder = parseInt(displayOrder, 10);
+      if (isNaN(parsedOrder) || parsedOrder < 1) {
+        return res.status(400).json({ error: 'Sıra numarası 1 veya daha büyük pozitif bir sayı olmalıdır.' });
+      }
+      order = parsedOrder;
+    } else {
+      // Eğer belirtilmemişse otomatik olarak en son sıranın 1 fazlasını ver
+      const maxOrderRes = await pool.query(
+        'SELECT COALESCE(MAX(display_order), 0) + 1 AS next_order FROM categories WHERE (parent_id IS NOT DISTINCT FROM $1)',
+        [validParentId]
+      );
+      order = parseInt(maxOrderRes.rows[0].next_order, 10);
+    }
+
+    // 3. Dinamik Alan Kontrolleri (Seçenekli alan boş olamaz kuralı)
+    let validatedFields = [];
+    if (Array.isArray(customFields)) {
+      for (const field of customFields) {
+        if (!field.name || field.name.trim().length < 2) continue;
+        if (field.type === 'select') {
+          if (!Array.isArray(field.options) || field.options.length < 1) {
+            return res.status(400).json({ 
+              error: `"${field.name}" seçmeli alanı için en az bir seçenek girmelisiniz.` 
+            });
+          }
+        }
+        validatedFields.push({
+          name: field.name.trim(),
+          type: field.type || 'text',
+          required: Boolean(field.required),
+          options: field.type === 'select' ? field.options : undefined
+        });
+      }
+    }
+
+    // Güvenli slug üretimi
+    const slug = trimmedName
       .toLowerCase()
       .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
       .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c')
@@ -634,15 +687,11 @@ app.post('/api/admin/categories', authenticateToken, requireAdmin, async (req, r
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '') + '-' + Date.now().toString().slice(-4);
 
-    const validParentId = parentId && !isNaN(parseInt(parentId, 10)) ? parseInt(parentId, 10) : null;
-    const order = displayOrder && !isNaN(parseInt(displayOrder, 10)) ? parseInt(displayOrder, 10) : 0;
-    const fields = Array.isArray(customFields) ? JSON.stringify(customFields) : '[]';
-
     const insertResult = await pool.query(`
       INSERT INTO categories (name, slug, parent_id, display_order, is_active, custom_fields)
       VALUES ($1, $2, $3, $4, TRUE, $5)
       RETURNING *
-    `, [name.trim(), slug, validParentId, order, fields]);
+    `, [trimmedName, slug, validParentId, order, JSON.stringify(validatedFields)]);
 
     const newCategory = insertResult.rows[0];
 
