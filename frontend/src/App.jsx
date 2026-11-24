@@ -8,11 +8,41 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import AdminUsersPage from './pages/AdminUsersPage';
 import HomePage from './pages/HomePage';
+import CreateListingPage from './pages/CreateListingPage';
+import ListingDetailPage from './pages/ListingDetailPage';
+
+// Şifahane Splash Screen (Açılış Animasyonu)
+function SplashScreen() {
+  return (
+    <div className="splash-screen">
+      <div className="splash-logo">
+        <svg width="64" height="64" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="48" height="48" rx="12" fill="rgba(255,255,255,0.12)" />
+          <path d="M24 10V38" stroke="white" strokeWidth="4.5" strokeLinecap="round" />
+          <path d="M10 24H38" stroke="white" strokeWidth="4.5" strokeLinecap="round" />
+          <path d="M24 18C28 14 34 14 36 16C38 18 38 24 34 28C30 32 24 30 24 30" stroke="#34d399" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span className="splash-title">Şifahane</span>
+        <span className="splash-subtitle">Hastane İlan Platformu</span>
+        <div className="splash-pulse">
+          <div className="splash-pulse-bar" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token') || null);
   const [loading, setLoading] = useState(true);
+  const [showSplash, setShowSplash] = useState(true);
+
+  // Splash screen: 2.4 saniye sonra kaldır
+  useEffect(() => {
+    const timer = setTimeout(() => setShowSplash(false), 2400);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Oturum doğrulama (sayfa yenilendiğinde)
   useEffect(() => {
@@ -52,76 +82,93 @@ export default function App() {
     setCurrentUser(null);
   };
 
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', color: '#64748b' }}>
-        Yükleniyor...
-      </div>
-    );
-  }
-
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* Herkese Açık Auth Rotaları */}
-        <Route
-          path="/giris"
-          element={
-            currentUser ? (
-              currentUser.role === 'admin' ? (
-                <Navigate to="/yonetim/kullanicilar" replace />
-              ) : (
-                <Navigate to="/" replace />
-              )
-            ) : (
-              <LoginPage onLoginSuccess={handleLoginSuccess} />
-            )
-          }
-        />
-        <Route
-          path="/kayit"
-          element={currentUser ? <Navigate to="/" replace /> : <RegisterPage />}
-        />
-        <Route
-          path="/sifremi-unuttum"
-          element={currentUser ? <Navigate to="/" replace /> : <ForgotPasswordPage />}
-        />
-        <Route
-          path="/sifremi-sifirla/:token"
-          element={currentUser ? <Navigate to="/" replace /> : <ResetPasswordPage />}
-        />
+    <>
+      {showSplash && <SplashScreen />}
+      {!loading && (
+        <BrowserRouter>
+          <Routes>
+            {/* Herkese Açık Auth Rotaları */}
+            <Route
+              path="/giris"
+              element={
+                currentUser ? (
+                  currentUser.role === 'admin' || currentUser.role === 'moderator' ? (
+                    <Navigate to="/yonetim/kullanicilar" replace />
+                  ) : (
+                    <Navigate to="/" replace />
+                  )
+                ) : (
+                  <LoginPage onLoginSuccess={handleLoginSuccess} />
+                )
+              }
+            />
+            <Route
+              path="/kayit"
+              element={currentUser ? <Navigate to="/" replace /> : <RegisterPage />}
+            />
+            <Route
+              path="/sifremi-unuttum"
+              element={currentUser ? <Navigate to="/" replace /> : <ForgotPasswordPage />}
+            />
+            <Route
+              path="/sifremi-sifirla/:token"
+              element={currentUser ? <Navigate to="/" replace /> : <ResetPasswordPage />}
+            />
 
-        {/* Korumalı Çalışan Ana Sayfası */}
-        <Route
-          path="/"
-          element={
-            currentUser ? (
-              <HomePage user={currentUser} onLogout={handleLogout} />
-            ) : (
-              <Navigate to="/giris" replace />
-            )
-          }
-        />
+            {/* Korumalı Çalışan Rotaları */}
+            <Route
+              path="/"
+              element={
+                currentUser ? (
+                  <HomePage user={currentUser} token={token} onLogout={handleLogout} />
+                ) : (
+                  <Navigate to="/giris" replace />
+                )
+              }
+            />
+            <Route
+              path="/ilan/olustur"
+              element={
+                currentUser ? (
+                  <CreateListingPage user={currentUser} token={token} onLogout={handleLogout} />
+                ) : (
+                  <Navigate to="/giris" replace />
+                )
+              }
+            />
+            <Route
+              path="/ilan/:id"
+              element={
+                currentUser ? (
+                  <ListingDetailPage user={currentUser} token={token} onLogout={handleLogout} />
+                ) : (
+                  <Navigate to="/giris" replace />
+                )
+              }
+            />
 
-        {/* Korumalı Yönetici Paneli */}
-        <Route
-          path="/yonetim/kullanicilar"
-          element={
-            currentUser ? (
-              currentUser.role === 'admin' || currentUser.role === 'moderator' ? (
-                <AdminUsersPage user={currentUser} token={token} onLogout={handleLogout} />
-              ) : (
-                <Navigate to="/" replace />
-              )
-            ) : (
-              <Navigate to="/giris" replace />
-            )
-          }
-        />
+            {/* Korumalı Yönetici Paneli */}
+            <Route
+              path="/yonetim/kullanicilar"
+              element={
+                currentUser ? (
+                  currentUser.role === 'admin' || currentUser.role === 'moderator' ? (
+                    <AdminUsersPage user={currentUser} token={token} onLogout={handleLogout} />
+                  ) : (
+                    <Navigate to="/" replace />
+                  )
+                ) : (
+                  <Navigate to="/giris" replace />
+                )
+              }
+            />
 
-        {/* Bilinmeyen rotaları yönlendir */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+            {/* Bilinmeyen rotaları yönlendir */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      )}
+    </>
   );
 }
