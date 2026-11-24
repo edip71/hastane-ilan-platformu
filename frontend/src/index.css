@@ -175,7 +175,12 @@ input:focus, select:focus, textarea:focus {
     display: none !important;
   }
   body {
-    padding-bottom: 65px; /* Sahibinden mobil alt menü boşluğu */
+    padding-bottom: calc(75px + env(safe-area-inset-bottom, 0px)) !important; /* Sahibinden mobil alt menü ve iOS/Android navigasyon bar boşluğu */
+  }
+
+  /* Ana sayfa sol sidebar mobilde vitrinin üstünde genişliği kaplasın */
+  aside {
+    width: 100% !important;
   }
 
   /* Küçük ekranlarda tabloların yatay kaydırılabilmesi */
