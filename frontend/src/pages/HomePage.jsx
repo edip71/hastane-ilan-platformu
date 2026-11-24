@@ -1,20 +1,50 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from '../components/Navbar';
 import { 
   Laptop, Tv, Sofa, Shirt, BookOpen, 
-  HelpCircle, ChevronRight, ShoppingBag, ShieldCheck, Tag, PlusCircle, Inbox
+  HelpCircle, ChevronRight, ShoppingBag, ShieldCheck, Tag, PlusCircle, Inbox,
+  MapPin, Calendar, Image as ImageIcon
 } from 'lucide-react';
 
 export default function HomePage({ user, onLogout }) {
+  const [categories, setCategories] = useState([]);
+  const [listings, setListings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedCat, setSelectedCat] = useState('');
 
-  const categories = [
-    { id: 'elektronik', name: 'Elektronik', icon: Laptop },
-    { id: 'beyaz-esya', name: 'Beyaz Eşya & Küçük Ev Aletleri', icon: Tv },
-    { id: 'ev-yasam', name: 'Ev & Yaşam / Mobilya', icon: Sofa },
-    { id: 'giyim', name: 'Giyim & Aksesuar', icon: Shirt },
-    { id: 'kitap-hobi', name: 'Kitap & Hobi', icon: BookOpen },
-    { id: 'diger', name: 'Diğer Her Şey', icon: HelpCircle },
-  ];
+  // Kategorileri Çek
+  useEffect(() => {
+    fetch('http://localhost:5000/api/categories')
+      .then(res => res.json())
+      .then(data => {
+        const flat = data.flat || [];
+        setCategories(flat.filter(c => c.parent_id !== null)); // Alt kategoriler
+      })
+      .catch(() => {});
+  }, []);
+
+  // İlanları Çek
+  const fetchListings = () => {
+    setLoading(true);
+    const token = localStorage.getItem('token');
+    const url = selectedCat 
+      ? `http://localhost:5000/api/listings?category=${encodeURIComponent(selectedCat)}`
+      : 'http://localhost:5000/api/listings';
+
+    fetch(url, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        setListings(data.listings || []);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchListings();
+  }, [selectedCat]);
 
   return (
     <div style={styles.page} className="page-fade">
@@ -25,39 +55,51 @@ export default function HomePage({ user, onLogout }) {
           
           <div style={styles.layout}>
             
-            {/* SOL SIDEBAR: Sahibinden Tarzı Kategori Ağacı */}
+            {/* SOL SIDEBAR: Kategori Ağacı */}
             <aside style={styles.sidebar}>
               <div style={styles.sidebarHeader}>
                 <ShoppingBag size={18} color="#004f8c" />
-                <h2 style={styles.sidebarTitle}>İkinci El Alışveriş</h2>
+                <h2 style={styles.sidebarTitle}>Kategoriler</h2>
               </div>
               <ul style={styles.categoryList}>
-                {categories.map((cat) => {
-                  const Icon = cat.icon;
-                  return (
-                    <li key={cat.id} style={styles.categoryItem}>
-                      <button 
-                        style={styles.categoryBtn}
-                        onClick={() => alert(`"${cat.name}" ilanları listeleme görevinde açılacaktır.`)}
-                      >
-                        <div style={styles.categoryLeft}>
-                          <Icon size={16} color="#64748b" />
-                          <span style={styles.categoryName}>{cat.name}</span>
-                        </div>
-                        <ChevronRight size={14} color="#94a3b8" />
-                      </button>
-                    </li>
-                  );
-                })}
+                <li style={styles.categoryItem}>
+                  <button 
+                    style={{
+                      ...styles.categoryBtn,
+                      backgroundColor: selectedCat === '' ? '#e0f2fe' : 'transparent',
+                      color: selectedCat === '' ? '#004f8c' : '#334155',
+                      fontWeight: selectedCat === '' ? '700' : '500',
+                    }}
+                    onClick={() => setSelectedCat('')}
+                  >
+                    <span>Tüm İlanlar</span>
+                    <ChevronRight size={14} color="#94a3b8" />
+                  </button>
+                </li>
+                {categories.map((cat) => (
+                  <li key={cat.id} style={styles.categoryItem}>
+                    <button 
+                      style={{
+                        ...styles.categoryBtn,
+                        backgroundColor: selectedCat === cat.slug ? '#e0f2fe' : 'transparent',
+                        color: selectedCat === cat.slug ? '#004f8c' : '#334155',
+                        fontWeight: selectedCat === cat.slug ? '700' : '500',
+                      }}
+                      onClick={() => setSelectedCat(cat.slug)}
+                    >
+                      <span>{cat.name}</span>
+                      <ChevronRight size={14} color="#94a3b8" />
+                    </button>
+                  </li>
+                ))}
               </ul>
 
-              {/* Kurumsal Güvenlik Notu */}
               <div style={styles.infoCard}>
                 <ShieldCheck size={20} color="#16a34a" />
                 <div>
                   <h4 style={styles.infoTitle}>Güvenli Kurum İçi İlan</h4>
                   <p style={styles.infoText}>
-                    Platformda yalnızca onaylanmış personeller ilan verebilir ve alışveriş yapabilir.
+                    Yalnızca kurum çalışanları ilan verebilir ve alışveriş yapabilir.
                   </p>
                 </div>
               </div>
@@ -66,7 +108,6 @@ export default function HomePage({ user, onLogout }) {
             {/* SAĞ ALAN: Vitrin Alanı */}
             <section style={styles.content}>
               
-              {/* Hoş Geldiniz Banner */}
               <div style={styles.banner}>
                 <div style={styles.bannerText}>
                   <h1 style={styles.bannerTitle}>Şifahane İlan Platformu</h1>
@@ -76,23 +117,66 @@ export default function HomePage({ user, onLogout }) {
                 </div>
               </div>
 
-              {/* Vitrin Başlığı */}
               <div style={styles.sectionHeader}>
                 <div style={styles.sectionTitleWrapper}>
                   <Tag size={18} color="#004f8c" />
-                  <h2 style={styles.sectionTitle}>Vitrin İlanları</h2>
+                  <h2 style={styles.sectionTitle}>
+                    {selectedCat ? `${categories.find(c => c.slug === selectedCat)?.name || 'Kategori'} İlanları` : 'Vitrin İlanları'}
+                  </h2>
                 </div>
-                <span style={styles.sectionBadge}>Henüz yayında ilan yok</span>
+                <span style={styles.sectionBadge}>
+                  {listings.length} ilan yayında
+                </span>
               </div>
 
-              {/* Örnek ilanlar kaldırıldı - Temiz boş durum (Empty State) */}
-              <div style={styles.emptyContainer}>
-                <Inbox size={48} color="#94a3b8" style={{ marginBottom: '12px' }} />
-                <h3 style={styles.emptyTitle}>Henüz Yayında Bir İlan Bulunmuyor</h3>
-                <p style={styles.emptyText}>
-                  İlan oluşturma görevi tamamlandığında kendi ilanlarınızı burada vitrinde sergileyebilirsiniz.
-                </p>
-              </div>
+              {loading ? (
+                <div style={styles.emptyContainer}>
+                  <p style={{ color: '#64748b' }}>İlanlar yükleniyor...</p>
+                </div>
+              ) : listings.length === 0 ? (
+                <div style={styles.emptyContainer}>
+                  <Inbox size={48} color="#94a3b8" style={{ marginBottom: '12px' }} />
+                  <h3 style={styles.emptyTitle}>Bu Kategoride Yayında İlan Bulunmuyor</h3>
+                  <p style={styles.emptyText}>
+                    İlk ilanı veren siz olun! Yönetici onayının ardından ilanınız burada vitrinde sergilenecektir.
+                  </p>
+                </div>
+              ) : (
+                <div style={styles.grid}>
+                  {listings.map((item) => (
+                    <div key={item.id} style={styles.adCard}>
+                      <div style={styles.adImgPlaceholder}>
+                        {item.cover_image ? (
+                          <img src={item.cover_image} alt={item.title} style={styles.adCoverImg} />
+                        ) : (
+                          <ImageIcon size={32} color="#94a3b8" />
+                        )}
+                        <span style={styles.categoryBadge}>{item.category_name}</span>
+                      </div>
+                      <div style={styles.adBody}>
+                        <div style={styles.adPrice}>
+                          {item.is_free ? 'ÜCRETSİZ' : (item.price ? `${Number(item.price).toLocaleString('tr-TR')} TL` : 'Fiyat Belirtilmedi')}
+                        </div>
+                        <div style={styles.adTitle} title={item.title}>{item.title}</div>
+                        
+                        <div style={styles.adMeta}>
+                          {item.location && (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                              <MapPin size={11} color="#64748b" />
+                              <span>{item.location}</span>
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={styles.adFooter}>
+                          <span>{item.author_first_name} {item.author_last_name}</span>
+                          <span>{new Date(item.created_at).toLocaleDateString('tr-TR')}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
             </section>
 
@@ -141,9 +225,10 @@ const styles = {
     display: 'flex',
     gap: '24px',
     alignItems: 'flex-start',
+    flexWrap: 'wrap',
   },
   sidebar: {
-    width: '280px',
+    width: '260px',
     backgroundColor: '#ffffff',
     border: '1px solid #e2e8f0',
     borderRadius: '6px',
@@ -171,32 +256,23 @@ const styles = {
     margin: 0,
   },
   categoryItem: {
-    marginBottom: '4px',
+    marginBottom: '2px',
   },
   categoryBtn: {
     width: '100%',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '8px 8px',
+    padding: '7px 8px',
     background: 'none',
     border: 'none',
     borderRadius: '4px',
     cursor: 'pointer',
     textAlign: 'left',
-  },
-  categoryLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-  },
-  categoryName: {
     fontSize: '13px',
-    color: '#334155',
-    fontWeight: '500',
   },
   infoCard: {
-    marginTop: '24px',
+    marginTop: '20px',
     padding: '12px',
     backgroundColor: '#f0fdf4',
     border: '1px solid #bbf7d0',
@@ -219,24 +295,25 @@ const styles = {
   },
   content: {
     flex: 1,
+    minWidth: '280px',
   },
   banner: {
     backgroundColor: '#ffffff',
     border: '1px solid #e2e8f0',
     borderRadius: '6px',
-    padding: '24px 28px',
-    marginBottom: '20px',
+    padding: '20px 24px',
+    marginBottom: '16px',
     boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
     borderLeft: '4px solid #004f8c',
   },
   bannerTitle: {
-    fontSize: '22px',
+    fontSize: '20px',
     fontWeight: '700',
     color: '#0f172a',
-    margin: '0 0 6px 0',
+    margin: '0 0 4px 0',
   },
   bannerSubtitle: {
-    fontSize: '14px',
+    fontSize: '13px',
     color: '#64748b',
     margin: 0,
   },
@@ -244,7 +321,7 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingBottom: '10px',
+    paddingBottom: '8px',
     borderBottom: '1px solid #e2e8f0',
     marginBottom: '16px',
   },
@@ -261,7 +338,7 @@ const styles = {
   },
   sectionBadge: {
     fontSize: '12px',
-    color: '#94a3b8',
+    color: '#64748b',
     fontWeight: '500',
   },
   emptyContainer: {
@@ -276,7 +353,7 @@ const styles = {
     justifyContent: 'center',
   },
   emptyTitle: {
-    fontSize: '16px',
+    fontSize: '15px',
     fontWeight: '700',
     color: '#334155',
     margin: '0 0 6px 0',
@@ -287,6 +364,85 @@ const styles = {
     maxWidth: '400px',
     margin: 0,
     lineHeight: '1.5',
+  },
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))',
+    gap: '16px',
+  },
+  adCard: {
+    backgroundColor: '#ffffff',
+    border: '1px solid #e2e8f0',
+    borderRadius: '6px',
+    overflow: 'hidden',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+    display: 'flex',
+    flexDirection: 'column',
+    cursor: 'pointer',
+    transition: 'transform 0.15s, box-shadow 0.15s',
+  },
+  adImgPlaceholder: {
+    height: '140px',
+    backgroundColor: '#f1f5f9',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  adCoverImg: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+  },
+  categoryBadge: {
+    position: 'absolute',
+    top: '6px',
+    left: '6px',
+    backgroundColor: 'rgba(0, 79, 140, 0.85)',
+    color: '#ffffff',
+    fontSize: '10px',
+    padding: '2px 6px',
+    borderRadius: '3px',
+    fontWeight: '600',
+  },
+  adBody: {
+    padding: '12px',
+    display: 'flex',
+    flexDirection: 'column',
+    flex: 1,
+  },
+  adPrice: {
+    fontSize: '15px',
+    fontWeight: '800',
+    color: '#004f8c',
+    marginBottom: '4px',
+  },
+  adTitle: {
+    fontSize: '13px',
+    fontWeight: '600',
+    color: '#1e293b',
+    lineHeight: '1.4',
+    marginBottom: '8px',
+    minHeight: '36px',
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden',
+  },
+  adMeta: {
+    fontSize: '11px',
+    color: '#64748b',
+    marginTop: 'auto',
+    marginBottom: '8px',
+  },
+  adFooter: {
+    paddingTop: '8px',
+    borderTop: '1px solid #f1f5f9',
+    fontSize: '11px',
+    color: '#94a3b8',
+    display: 'flex',
+    justifyContent: 'space-between',
   },
   footer: {
     backgroundColor: '#ffffff',

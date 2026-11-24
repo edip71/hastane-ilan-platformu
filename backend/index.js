@@ -783,6 +783,39 @@ app.patch('/api/admin/categories/:id', authenticateToken, requireAdmin, async (r
 // GÖREV 07: YENİ İLAN OLUŞTUR / TASLAK KAYDET (LISTINGS API)
 // -------------------------------------------------------------
 
+// Yayındaki Aktif İlanları Listeleme (Ana Sayfa Vitrini İçin)
+app.get('/api/listings', authenticateToken, async (req, res) => {
+  try {
+    const { category, search } = req.query;
+    let queryText = `
+      SELECT l.*, c.name as category_name, u.first_name as author_first_name, u.last_name as author_last_name
+      FROM listings l
+      JOIN categories c ON l.category_id = c.id
+      JOIN users u ON l.user_id = u.id
+      WHERE l.status = 'active'
+    `;
+    const params = [];
+
+    if (category) {
+      params.push(category);
+      queryText += ` AND (c.slug = $${params.length} OR c.id::text = $${params.length})`;
+    }
+
+    if (search && search.trim() !== '') {
+      params.push(`%${search.trim().toLowerCase()}%`);
+      queryText += ` AND (LOWER(l.title) LIKE $${params.length} OR LOWER(l.description) LIKE $${params.length})`;
+    }
+
+    queryText += ' ORDER BY l.created_at DESC LIMIT 30';
+
+    const result = await pool.query(queryText, params);
+    return res.json({ listings: result.rows });
+  } catch (err) {
+    console.error('İlanları Listeleme Hatası:', err);
+    return res.status(500).json({ error: 'İlanlar getirilemedi.' });
+  }
+});
+
 // 1. Yeni İlan Oluştur veya Taslak Kaydet (Oturum Zorunlu)
 app.post('/api/listings', authenticateToken, async (req, res) => {
   try {
@@ -911,7 +944,7 @@ app.post('/api/listings', authenticateToken, async (req, res) => {
 
   } catch (err) {
     console.error('İlan Oluşturma Hatası:', err);
-    return res.status(500).json({ error: 'İlan kaydedilirken bir hata oluştu.' });
+    return res.status(500).json({ error: 'İlan kaydedilirken bir hata oluştu: ' + (err.message || '') });
   }
 });
 

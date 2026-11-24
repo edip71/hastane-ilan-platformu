@@ -3,20 +3,20 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { 
   PlusCircle, Upload, X, CheckCircle2, AlertCircle, 
-  ArrowLeft, Eye, Save, Send, Image as ImageIcon, Loader2, Info
+  ArrowLeft, Eye, Save, Send, Image as ImageIcon, Loader2, Info, Building2, MapPin
 } from 'lucide-react';
 
 export default function CreateListingPage({ user, token, onLogout }) {
   const navigate = useNavigate();
 
-  // Oturum Kontrolü (Yalnızca giriş yapmış personeller ilan verebilir)
+  // Oturum Kontrolü
   useEffect(() => {
     if (!token) {
       navigate('/giris');
     }
   }, [token, navigate]);
 
-  // Kategoriler Listesi (Görev 06 API'sinden gelir)
+  // Kategoriler
   const [categories, setCategories] = useState([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -27,16 +27,18 @@ export default function CreateListingPage({ user, token, onLogout }) {
   const [price, setPrice] = useState('');
   const [isFree, setIsFree] = useState(false);
   const [contactInfo, setContactInfo] = useState('');
-  const [location, setLocation] = useState('');
+  const [building, setBuilding] = useState(''); // Kurum İçi Bina / Blok
+  const [unit, setUnit] = useState(''); // Kurum İçi Birim / Servis
   const [customValues, setCustomValues] = useState({});
 
   // Fotoğraflar (Base64 data URL)
   const [images, setImages] = useState([]);
   const [coverIndex, setCoverIndex] = useState(0);
 
-  // Durumlar
+  // Durumlar & Hatalar
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [success, setSuccess] = useState('');
   const [previewMode, setPreviewMode] = useState(false);
 
@@ -45,29 +47,28 @@ export default function CreateListingPage({ user, token, onLogout }) {
     fetch('http://localhost:5000/api/categories')
       .then(res => res.json())
       .then(data => {
-        // Yalnızca alt kategorileri veya alt kategorisi olmayan ana kategorileri seçilebilir kıl
         const flat = data.flat || [];
         setCategories(flat);
       })
       .catch(() => setError('Kategoriler yüklenemedi.'));
   }, []);
 
-  // Kategori Değiştiğinde
   const handleCategoryChange = (e) => {
     const catId = e.target.value;
     setSelectedCategoryId(catId);
     const cat = categories.find(c => c.id === parseInt(catId, 10));
     setSelectedCategory(cat || null);
-    // Dinamik alan değerlerini sıfırla
     setCustomValues({});
+    setFieldErrors(prev => ({ ...prev, category: undefined }));
+    setError('');
   };
 
-  // Dinamik Alan Değişimi
   const handleCustomValueChange = (fieldName, val) => {
     setCustomValues(prev => ({ ...prev, [fieldName]: val }));
+    setFieldErrors(prev => ({ ...prev, [fieldName]: undefined }));
+    setError('');
   };
 
-  // Fotoğraf Yükleme (Maksimum 5 Adet, 2MB Sınırı)
   const handleImageUpload = (e) => {
     const files = Array.from(e.target.files);
     if (images.length + files.length > 5) {
@@ -103,33 +104,61 @@ export default function CreateListingPage({ user, token, onLogout }) {
     }
   };
 
-  // Gönderim Fonksiyonu (Taslak veya Onaya Gönder)
+  // Doğrulama
+  const validateForm = (isDraft) => {
+    const errs = {};
+    if (!selectedCategoryId) {
+      errs.category = 'Lütfen bir kategori seçiniz.';
+    }
+
+    if (!isDraft) {
+      if (!title.trim() || title.trim().length < 5) {
+        errs.title = 'İlan başlığı en az 5 karakter olmalıdır.';
+      } else if (title.trim().length > 150) {
+        errs.title = 'İlan başlığı en fazla 150 karakter olabilir.';
+      }
+
+      if (!description.trim() || description.trim().length < 10) {
+        errs.description = 'Detaylı açıklama en az 10 karakter olmalıdır.';
+      } else if (description.trim().length > 2000) {
+        errs.description = 'Açıklama en fazla 2000 karakter olabilir.';
+      }
+
+      if (!isFree) {
+        if (!price || isNaN(Number(price)) || Number(price) < 0) {
+          errs.price = 'Geçerli bir fiyat giriniz veya ücretsiz kutucuğunu işaretleyiniz.';
+        }
+      }
+
+      // Dinamik özel alan zorunlulukları
+      if (selectedCategory && Array.isArray(selectedCategory.custom_fields)) {
+        selectedCategory.custom_fields.forEach(f => {
+          if (f.required && (!customValues[f.name] || String(customValues[f.name]).trim() === '')) {
+            errs[f.name] = `"${f.name}" alanını doldurmanız zorunludur.`;
+          }
+        });
+      }
+    }
+
+    setFieldErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
   const handleSubmit = async (isDraft = false) => {
     setError('');
     setSuccess('');
 
-    // Taslak değilse ön doğrulamalar
-    if (!isDraft) {
-      if (!selectedCategoryId) {
-        setError('Lütfen bir kategori seçiniz.');
-        return;
-      }
-      if (!title.trim() || title.trim().length < 5) {
-        setError('Başlık en az 5 karakter olmalıdır.');
-        return;
-      }
-      if (!description.trim() || description.trim().length < 10) {
-        setError('Açıklama en az 10 karakter olmalıdır.');
-        return;
-      }
-      if (!isFree && (!price || isNaN(Number(price)) || Number(price) < 0)) {
-        setError('Lütfen geçerli bir fiyat giriniz veya ücretsiz seçeneğini işaretleyiniz.');
-        return;
-      }
+    if (!validateForm(isDraft)) {
+      // Hata varsa butona yakın uyarı ver
+      setError('Lütfen formdaki eksik veya hatalı alanları kontrol ediniz.');
+      return;
     }
 
     setLoading(true);
     try {
+      // Kurum içi konum birleştirme
+      const combinedLocation = [building.trim(), unit.trim()].filter(Boolean).join(' - ');
+
       const payload = {
         categoryId: selectedCategoryId,
         title: title.trim(),
@@ -137,7 +166,7 @@ export default function CreateListingPage({ user, token, onLogout }) {
         price: isFree ? null : (price ? Number(price) : null),
         isFree: Boolean(isFree),
         contactInfo: contactInfo.trim(),
-        location: location.trim(),
+        location: combinedLocation,
         customValues,
         images,
         coverImage: images[coverIndex] || null,
@@ -173,7 +202,6 @@ export default function CreateListingPage({ user, token, onLogout }) {
       <main style={styles.main}>
         <div style={styles.container}>
           
-          {/* Üst Başlık & Geri Dön Butonu */}
           <div style={styles.pageHeader}>
             <button onClick={() => navigate('/')} style={styles.btnBack}>
               <ArrowLeft size={16} />
@@ -181,11 +209,10 @@ export default function CreateListingPage({ user, token, onLogout }) {
             </button>
             <h1 style={styles.pageTitle}>Ücretsiz İlan Ver</h1>
             <p style={styles.pageSubtitle}>
-              İkinci el veya ihtiyaç fazlası eşyalarınızı kurum personelleriyle güvenle paylaşın.
+              İkinci el eşyalarınızı kurum personelleriyle güvenle paylaşın.
             </p>
           </div>
 
-          {/* Bildirimler */}
           {success ? (
             <div style={styles.successBox}>
               <CheckCircle2 size={48} color="#16a34a" style={{ marginBottom: '12px' }} />
@@ -201,6 +228,9 @@ export default function CreateListingPage({ user, token, onLogout }) {
                     setTitle('');
                     setDescription('');
                     setPrice('');
+                    setBuilding('');
+                    setUnit('');
+                    setContactInfo('');
                     setImages([]);
                     setCustomValues({});
                   }} 
@@ -213,23 +243,18 @@ export default function CreateListingPage({ user, token, onLogout }) {
           ) : (
             <div style={styles.layout}>
               
-              {/* SOL FORM ALANI */}
               <div style={styles.formCard}>
                 
-                {error && (
-                  <div style={styles.errorAlert}>
-                    <AlertCircle size={18} />
-                    <span>{error}</span>
-                  </div>
-                )}
-
                 {/* 1. Kategori Seçimi */}
                 <div style={styles.formGroup}>
                   <label style={styles.label}>Kategori Seçiniz *</label>
                   <select 
                     value={selectedCategoryId} 
                     onChange={handleCategoryChange}
-                    style={styles.select}
+                    style={{
+                      ...styles.select,
+                      borderColor: fieldErrors.category ? '#dc2626' : '#cbd5e1'
+                    }}
                   >
                     <option value="">-- Kategori Seçin --</option>
                     {categories.map(c => (
@@ -238,15 +263,18 @@ export default function CreateListingPage({ user, token, onLogout }) {
                       </option>
                     ))}
                   </select>
+                  {fieldErrors.category && (
+                    <span style={styles.inlineError}>{fieldErrors.category}</span>
+                  )}
                 </div>
 
-                {/* Kategoriye Ait Dinamik Özel Alanlar */}
+                {/* Dinamik Alanlar */}
                 {selectedCategory && Array.isArray(selectedCategory.custom_fields) && selectedCategory.custom_fields.length > 0 && (
                   <div style={styles.customFieldsBox}>
                     <div style={styles.customFieldsHeader}>
                       <Info size={16} color="#004f8c" />
                       <span style={{ fontSize: '13px', fontWeight: '700', color: '#004f8c' }}>
-                        {selectedCategory.name} Kategorisi Özellikleri
+                        {selectedCategory.name} Özellikleri
                       </span>
                     </div>
 
@@ -260,7 +288,10 @@ export default function CreateListingPage({ user, token, onLogout }) {
                             <select
                               value={customValues[f.name] || ''}
                               onChange={(e) => handleCustomValueChange(f.name, e.target.value)}
-                              style={styles.select}
+                              style={{
+                                ...styles.select,
+                                borderColor: fieldErrors[f.name] ? '#dc2626' : '#cbd5e1'
+                              }}
                             >
                               <option value="">Seçiniz</option>
                               {(f.options || []).map((opt, oi) => (
@@ -273,8 +304,14 @@ export default function CreateListingPage({ user, token, onLogout }) {
                               value={customValues[f.name] || ''}
                               onChange={(e) => handleCustomValueChange(f.name, e.target.value)}
                               placeholder={f.name}
-                              style={styles.input}
+                              style={{
+                                ...styles.input,
+                                borderColor: fieldErrors[f.name] ? '#dc2626' : '#cbd5e1'
+                              }}
                             />
+                          )}
+                          {fieldErrors[f.name] && (
+                            <span style={styles.inlineError}>{fieldErrors[f.name]}</span>
                           )}
                         </div>
                       ))}
@@ -282,7 +319,7 @@ export default function CreateListingPage({ user, token, onLogout }) {
                   </div>
                 )}
 
-                {/* 2. İlan Başlığı */}
+                {/* 2. Başlık */}
                 <div style={styles.formGroup}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <label style={styles.label}>İlan Başlığı *</label>
@@ -291,11 +328,21 @@ export default function CreateListingPage({ user, token, onLogout }) {
                   <input
                     type="text"
                     value={title}
-                    onChange={(e) => setTitle(e.target.value)}
+                    onChange={(e) => {
+                      setTitle(e.target.value);
+                      setFieldErrors(prev => ({ ...prev, title: undefined }));
+                      setError('');
+                    }}
                     maxLength={150}
                     placeholder="Örn: Tertemiz 24 inç Bilgisayar Monitörü"
-                    style={styles.input}
+                    style={{
+                      ...styles.input,
+                      borderColor: fieldErrors.title ? '#dc2626' : '#cbd5e1'
+                    }}
                   />
+                  {fieldErrors.title && (
+                    <span style={styles.inlineError}>{fieldErrors.title}</span>
+                  )}
                 </div>
 
                 {/* 3. Açıklama */}
@@ -307,14 +354,24 @@ export default function CreateListingPage({ user, token, onLogout }) {
                   <textarea
                     rows={5}
                     value={description}
-                    onChange={(e) => setDescription(e.target.value)}
+                    onChange={(e) => {
+                      setDescription(e.target.value);
+                      setFieldErrors(prev => ({ ...prev, description: undefined }));
+                      setError('');
+                    }}
                     maxLength={2000}
                     placeholder="Ürünün durumunu, varsa garantisini ve teslim koşullarını belirtin..."
-                    style={styles.textarea}
+                    style={{
+                      ...styles.textarea,
+                      borderColor: fieldErrors.description ? '#dc2626' : '#cbd5e1'
+                    }}
                   />
+                  {fieldErrors.description && (
+                    <span style={styles.inlineError}>{fieldErrors.description}</span>
+                  )}
                 </div>
 
-                {/* 4. Fiyat ve Ücretsiz Seçeneği */}
+                {/* 4. Fiyat & Ücretsiz */}
                 <div style={styles.row}>
                   <div style={{ flex: 1 }}>
                     <label style={styles.label}>Fiyat (TL) {!isFree && '*'}</label>
@@ -322,14 +379,22 @@ export default function CreateListingPage({ user, token, onLogout }) {
                       type="number"
                       disabled={isFree}
                       value={price}
-                      onChange={(e) => setPrice(e.target.value)}
+                      onChange={(e) => {
+                        setPrice(e.target.value);
+                        setFieldErrors(prev => ({ ...prev, price: undefined }));
+                        setError('');
+                      }}
                       placeholder="0.00"
                       min="0"
                       style={{
                         ...styles.input,
                         backgroundColor: isFree ? '#f1f5f9' : '#ffffff',
+                        borderColor: fieldErrors.price ? '#dc2626' : '#cbd5e1'
                       }}
                     />
+                    {fieldErrors.price && (
+                      <span style={styles.inlineError}>{fieldErrors.price}</span>
+                    )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', paddingTop: '24px' }}>
                     <label style={styles.checkboxLabel}>
@@ -339,6 +404,7 @@ export default function CreateListingPage({ user, token, onLogout }) {
                         onChange={(e) => {
                           setIsFree(e.target.checked);
                           if (e.target.checked) setPrice('');
+                          setFieldErrors(prev => ({ ...prev, price: undefined }));
                         }}
                       />
                       <span>Ücretsiz Paylaşım</span>
@@ -346,31 +412,53 @@ export default function CreateListingPage({ user, token, onLogout }) {
                   </div>
                 </div>
 
-                {/* 5. Konum ve İletişim */}
+                {/* 5. Ayrı Kurum İçi Konum ve Birim Alanları */}
                 <div style={styles.row}>
                   <div style={{ flex: 1 }}>
-                    <label style={styles.label}>Kurum İçi Konum / Birim</label>
+                    <label style={styles.label}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Building2 size={14} color="#004f8c" />
+                        <span>Bina / Blok Bilgisi</span>
+                      </span>
+                    </label>
                     <input
                       type="text"
-                      value={location}
-                      onChange={(e) => setLocation(e.target.value)}
-                      placeholder="Örn: A Blok 3. Kat / Kardiyoloji"
+                      value={building}
+                      onChange={(e) => setBuilding(e.target.value)}
+                      placeholder="Örn: Ana Bina / A Blok / Ek Hizmet Binası"
                       style={styles.input}
                     />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <label style={styles.label}>İletişim / Dahili No</label>
+                    <label style={styles.label}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <MapPin size={14} color="#004f8c" />
+                        <span>Birim / Poliklinik / Kat</span>
+                      </span>
+                    </label>
                     <input
                       type="text"
-                      value={contactInfo}
-                      onChange={(e) => setContactInfo(e.target.value)}
-                      placeholder="Örn: Dahili 4210"
+                      value={unit}
+                      onChange={(e) => setUnit(e.target.value)}
+                      placeholder="Örn: Kardiyoloji Servisi - Kat 3"
                       style={styles.input}
                     />
                   </div>
                 </div>
 
-                {/* 6. Fotoğraf Yükleme Bölümü */}
+                {/* 6. İletişim / Dahili No */}
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>İletişim / Dahili Telefon</label>
+                  <input
+                    type="text"
+                    value={contactInfo}
+                    onChange={(e) => setContactInfo(e.target.value)}
+                    placeholder="Örn: Dahili 4210 veya kurum e-postası"
+                    style={styles.input}
+                  />
+                </div>
+
+                {/* 7. Fotoğraflar */}
                 <div style={styles.photoSection}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                     <label style={styles.label}>Fotoğraflar (En fazla 5 adet, max 2MB)</label>
@@ -418,7 +506,15 @@ export default function CreateListingPage({ user, token, onLogout }) {
                   </div>
                 </div>
 
-                {/* Buton Aksiyonları: Önizleme / Taslak / Onaya Gönder */}
+                {/* BUTONLARIN HEMEN ÜZERİNDE DOĞRUDAN GÖRÜNEN HATA BİLDİRİMİ */}
+                {error && (
+                  <div style={styles.errorAlertBottom}>
+                    <AlertCircle size={20} color="#b91c1c" style={{ flexShrink: 0 }} />
+                    <span style={{ fontWeight: '600' }}>{error}</span>
+                  </div>
+                )}
+
+                {/* Aksiyon Barı */}
                 <div style={styles.actionsBar}>
                   <button
                     type="button"
@@ -426,7 +522,7 @@ export default function CreateListingPage({ user, token, onLogout }) {
                     style={styles.btnActionSecondary}
                   >
                     <Eye size={16} />
-                    <span>{previewMode ? 'Önizlemeyi Gizle' : 'Önizle'}</span>
+                    <span>{previewMode ? 'Önizlemeyi Kapat' : 'Canlı Önizle'}</span>
                   </button>
 
                   <button
@@ -448,12 +544,12 @@ export default function CreateListingPage({ user, token, onLogout }) {
                     {loading ? (
                       <>
                         <Loader2 size={16} className="spin-animate" />
-                        <span>Gönderiliyor...</span>
+                        <span>Kaydediliyor...</span>
                       </>
                     ) : (
                       <>
                         <Send size={16} />
-                        <span>Onaya Gönder</span>
+                        <span>İlanı Onaya Gönder</span>
                       </>
                     )}
                   </button>
@@ -461,7 +557,7 @@ export default function CreateListingPage({ user, token, onLogout }) {
 
               </div>
 
-              {/* SAĞ CANLI ÖNİZLEME (PREVIEW ALANI) */}
+              {/* CANLI ÖNİZLEME */}
               {previewMode && (
                 <div style={styles.previewCard}>
                   <div style={styles.previewHeader}>
@@ -493,7 +589,6 @@ export default function CreateListingPage({ user, token, onLogout }) {
                       {description || 'İlan açıklaması burada yer alacaktır.'}
                     </p>
 
-                    {/* Dinamik Alan Önizlemesi */}
                     {Object.keys(customValues).length > 0 && (
                       <div style={styles.previewCustomValues}>
                         {Object.entries(customValues).map(([k, v]) => (
@@ -505,7 +600,7 @@ export default function CreateListingPage({ user, token, onLogout }) {
                     )}
 
                     <div style={styles.previewMeta}>
-                      <span>{location || 'Konum belirtilmedi'}</span>
+                      <span>{[building, unit].filter(Boolean).join(' / ') || 'Konum belirtilmedi'}</span>
                       <span>{contactInfo ? `İletişim: ${contactInfo}` : ''}</span>
                     </div>
                   </div>
@@ -627,6 +722,7 @@ const styles = {
     gap: '16px',
     marginBottom: '16px',
     alignItems: 'flex-start',
+    flexWrap: 'wrap',
   },
   checkboxLabel: {
     display: 'flex',
@@ -636,6 +732,13 @@ const styles = {
     color: '#334155',
     fontWeight: '500',
     cursor: 'pointer',
+  },
+  inlineError: {
+    display: 'block',
+    color: '#dc2626',
+    fontSize: '12px',
+    marginTop: '4px',
+    fontWeight: '500',
   },
   customFieldsBox: {
     backgroundColor: '#f8fafc',
@@ -739,12 +842,26 @@ const styles = {
     color: '#004f8c',
     fontWeight: '600',
   },
+  errorAlertBottom: {
+    backgroundColor: '#fef2f2',
+    border: '1.5px solid #fecaca',
+    borderRadius: '6px',
+    padding: '12px 16px',
+    color: '#b91c1c',
+    fontSize: '13px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    marginBottom: '16px',
+    animation: 'pageFadeIn 0.2s ease-in-out',
+  },
   actionsBar: {
     display: 'flex',
     justifyContent: 'flex-end',
     gap: '10px',
     borderTop: '1px solid #f1f5f9',
     paddingTop: '18px',
+    flexWrap: 'wrap',
   },
   btnActionSecondary: {
     display: 'flex',
@@ -851,18 +968,6 @@ const styles = {
     justifyContent: 'space-between',
     borderTop: '1px solid #f1f5f9',
     paddingTop: '8px',
-  },
-  errorAlert: {
-    backgroundColor: '#fef2f2',
-    border: '1px solid #fecaca',
-    color: '#b91c1c',
-    padding: '10px 14px',
-    borderRadius: '4px',
-    fontSize: '13px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '16px',
   },
   successBox: {
     backgroundColor: '#ffffff',

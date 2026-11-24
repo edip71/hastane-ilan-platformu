@@ -58,10 +58,16 @@ export default function App() {
   return (
     <Router>
       <Routes>
-        {/* Ana Sayfa (Sahibinden tarzı vitrin ve kategori menüsü - Herkese açık) */}
+        {/* Ana Sayfa - Yalnızca Giriş Yapmış Kullanıcılara Açık */}
         <Route 
           path="/" 
-          element={<HomePage user={user} onLogout={handleLogout} />} 
+          element={
+            user ? (
+              <HomePage user={user} onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/giris" replace />
+            )
+          } 
         />
 
         {/* Görev 02: Kayıt Ol */}

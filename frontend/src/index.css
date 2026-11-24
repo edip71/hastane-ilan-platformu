@@ -73,3 +73,24 @@ input:focus, select:focus, textarea:focus {
 .spin-animate {
   animation: spin 0.8s linear infinite;
 }
+
+/* RESPONSIVE GÖRÜNÜRLÜK SINIFLARI */
+.mobile-only {
+  display: none !important;
+}
+
+.desktop-only {
+  display: inline-flex !important;
+}
+
+@media (max-width: 768px) {
+  .mobile-only {
+    display: flex !important;
+  }
+  .desktop-only {
+    display: none !important;
+  }
+  body {
+    padding-bottom: 60px; /* Sabit mobil alt bar için boşluk */
+  }
+}
