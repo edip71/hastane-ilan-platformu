@@ -116,8 +116,22 @@ async function initDb() {
         used BOOLEAN DEFAULT FALSE NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS listings (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title VARCHAR(150) NOT NULL,
+        description TEXT NOT NULL,
+        category VARCHAR(50) NOT NULL,
+        price NUMERIC(10, 2) DEFAULT NULL,
+        is_free BOOLEAN DEFAULT FALSE NOT NULL,
+        contact_info VARCHAR(200) DEFAULT NULL,
+        status VARCHAR(20) DEFAULT 'active' NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
     `);
-    console.log('✅ "users", "audit_logs" ve "password_resets" tabloları hazır!');
+    console.log('✅ "users", "audit_logs", "password_resets" ve "listings" tabloları hazır!');
     client.release();
   } catch (err) {
     console.error('❌ Veritabanı bağlantı hatası:', err.message);
@@ -660,6 +674,196 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Sunucu hatası.' });
+  }
+});
+
+// ══════════════════════════════════════════════════════════
+// GÖREV 06 & 07: İLAN YÖNETİMİ ENDPOINT'LERİ
+// ══════════════════════════════════════════════════════════
+
+// İlan kategorileri sabiti (güvenilir kaynak: backend)
+const VALID_CATEGORIES = [
+  'nobet-degisimi',
+  'ikinci-el-esya',
+  'ev-arkadasligi',
+  'kiralik-ev',
+  'ulasim-yol-arkadasligi',
+  'kitap-ders-materyali',
+  'diger',
+];
+
+// 1. YENİ İLAN OLUŞTUR
+app.post('/api/listings', authenticateToken, async (req, res) => {
+  try {
+    const { title, description, category, price, isFree, contactInfo } = req.body;
+
+    // Zorunlu alan kontrolleri
+    if (!title || !title.trim()) return res.status(400).json({ error: 'İlan başlığı zorunludur.' });
+    if (!description || !description.trim()) return res.status(400).json({ error: 'İlan açıklaması zorunludur.' });
+    if (!category) return res.status(400).json({ error: 'İlan kategorisi zorunludur.' });
+
+    // Uzunluk güvenlik sınırları
+    if (title.trim().length > 150) return res.status(400).json({ error: 'Başlık en fazla 150 karakter olabilir.' });
+    if (description.trim().length > 2000) return res.status(400).json({ error: 'Açıklama en fazla 2000 karakter olabilir.' });
+
+    // Kategori doğrulama (istemciye asla güvenme prensibi)
+    if (!VALID_CATEGORIES.includes(category)) {
+      return res.status(400).json({ error: 'Geçersiz ilan kategorisi.' });
+    }
+
+    // Fiyat kontrolü: İlan ücretsiz değilse geçerli bir sayı girilmeli
+    let cleanPrice = null;
+    if (!isFree) {
+      const parsedPrice = parseFloat(price);
+      if (isNaN(parsedPrice) || parsedPrice < 0) {
+        return res.status(400).json({ error: 'Geçerli bir fiyat giriniz veya "Ücretsiz" seçeneğini işaretleyin.' });
+      }
+      cleanPrice = parsedPrice;
+    }
+
+    const result = await pool.query(
+      `INSERT INTO listings (user_id, title, description, category, price, is_free, contact_info, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
+       RETURNING *`,
+      [
+        req.user.id,
+        title.trim(),
+        description.trim(),
+        category,
+        cleanPrice,
+        isFree ? true : false,
+        contactInfo ? contactInfo.trim().substring(0, 200) : null,
+      ]
+    );
+
+    res.status(201).json({ success: true, listing: result.rows[0] });
+  } catch (error) {
+    console.error('İlan oluşturma hatası:', error);
+    res.status(500).json({ error: 'İlan oluşturulurken sunucu hatası oluştu.' });
+  }
+});
+
+// 2. İLANLARI LİSTELE (Filtreleme + Arama + Sayfalama)
+app.get('/api/listings', authenticateToken, async (req, res) => {
+  try {
+    const { category, search, page = 1, limit = 12 } = req.query;
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 12));
+    const offset = (pageNum - 1) * limitNum;
+
+    let queryText = `
+      SELECT
+        l.id, l.title, l.description, l.category,
+        l.price, l.is_free, l.contact_info, l.status,
+        l.created_at,
+        u.first_name AS author_first_name,
+        u.last_name AS author_last_name,
+        u.email AS author_email
+      FROM listings l
+      JOIN users u ON l.user_id = u.id
+      WHERE l.status = 'active'
+    `;
+    const queryParams = [];
+
+    // Kategori filtresi
+    if (category && category !== 'tumu' && VALID_CATEGORIES.includes(category)) {
+      queryParams.push(category);
+      queryText += ` AND l.category = $${queryParams.length}`;
+    }
+
+    // Metin arama (başlık ve açıklamada)
+    if (search && search.trim()) {
+      queryParams.push(`%${search.trim().toLowerCase()}%`);
+      queryText += ` AND (LOWER(l.title) LIKE $${queryParams.length} OR LOWER(l.description) LIKE $${queryParams.length})`;
+    }
+
+    // Toplam sayı sorgusu (sayfalama için)
+    const countResult = await pool.query(
+      `SELECT COUNT(*) FROM listings l WHERE l.status = 'active'${
+        category && category !== 'tumu' && VALID_CATEGORIES.includes(category) ? ` AND l.category = '${category}'` : ''
+      }${search && search.trim() ? ` AND (LOWER(l.title) LIKE '%${search.trim().toLowerCase()}%' OR LOWER(l.description) LIKE '%${search.trim().toLowerCase()}%')` : ''}`
+    );
+
+    queryText += ` ORDER BY l.created_at DESC LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
+    queryParams.push(limitNum, offset);
+
+    const result = await pool.query(queryText, queryParams);
+
+    res.json({
+      listings: result.rows,
+      pagination: {
+        total: parseInt(countResult.rows[0].count, 10),
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(parseInt(countResult.rows[0].count, 10) / limitNum),
+      },
+    });
+  } catch (error) {
+    console.error('İlan listeleme hatası:', error);
+    res.status(500).json({ error: 'İlanlar yüklenirken sunucu hatası oluştu.' });
+  }
+});
+
+// 3. TEK İLAN DETAYI
+app.get('/api/listings/:id', authenticateToken, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ error: 'Geçersiz ilan kimliği.' });
+
+    const result = await pool.query(
+      `SELECT l.*, u.first_name AS author_first_name, u.last_name AS author_last_name, u.email AS author_email
+       FROM listings l JOIN users u ON l.user_id = u.id
+       WHERE l.id = $1 AND l.status = 'active'`,
+      [id]
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ error: 'İlan bulunamadı veya silinmiş.' });
+
+    res.json({ listing: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'İlan detayı alınamadı.' });
+  }
+});
+
+// 4. KENDİ İLANINI SİL (Güvenli: sadece kendi ilanını silebilir)
+app.delete('/api/listings/:id', authenticateToken, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ error: 'Geçersiz ilan kimliği.' });
+
+    // İlan sahibi kontrolü (admin her ilanı silebilir, normal kullanıcı yalnızca kendi ilanını)
+    const check = await pool.query('SELECT user_id FROM listings WHERE id = $1', [id]);
+    if (check.rows.length === 0) return res.status(404).json({ error: 'İlan bulunamadı.' });
+
+    if (req.user.role !== 'admin' && req.user.role !== 'moderator') {
+      if (check.rows[0].user_id !== req.user.id) {
+        return res.status(403).json({ error: 'Bu ilanı silme yetkiniz bulunmamaktadır.' });
+      }
+    }
+
+    // Soft delete: status = 'deleted' (veri kaybı olmaz, audit için saklı kalır)
+    await pool.query(
+      `UPDATE listings SET status = 'deleted', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      [id]
+    );
+
+    res.json({ success: true, message: 'İlan başarıyla kaldırıldı.' });
+  } catch (error) {
+    res.status(500).json({ error: 'İlan silinirken hata oluştu.' });
+  }
+});
+
+// 5. KENDİ İLANLARIM
+app.get('/api/my-listings', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM listings WHERE user_id = $1 AND status != 'deleted' ORDER BY created_at DESC`,
+      [req.user.id]
+    );
+    res.json({ listings: result.rows });
+  } catch (error) {
+    res.status(500).json({ error: 'İlanlarınız yüklenemedi.' });
   }
 });
 
