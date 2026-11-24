@@ -50,17 +50,54 @@ a {
 
 /* Buton Etkileşimleri (Hover & Basınca Hafif Küçülme) */
 button {
-  transition: all 0.15s ease-in-out;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+}
+
+button:hover {
+  transform: translateY(-1.5px);
+  filter: brightness(1.05);
+  box-shadow: 0 4px 12px rgba(0, 79, 140, 0.12);
 }
 
 button:active {
-  transform: scale(0.97);
+  transform: translateY(0) scale(0.97);
+  box-shadow: none;
 }
 
-/* İnput Odaklanma Efekti */
+/* İnput & Textarea Odaklanma ve Yazma Efektleri */
+input, select, textarea {
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, background-color 0.2s ease, transform 0.15s ease;
+}
+
+input:hover, select:hover, textarea:hover {
+  border-color: #94a3b8 !important;
+}
+
 input:focus, select:focus, textarea:focus {
   border-color: var(--primary) !important;
-  box-shadow: 0 0 0 3px rgba(0, 79, 140, 0.12);
+  box-shadow: 0 0 0 3.5px rgba(0, 79, 140, 0.15), 0 2px 6px rgba(0, 0, 0, 0.04);
+  background-color: #ffffff !important;
+  outline: none;
+}
+
+/* Mobilde Hamburger Menü Yumuşak Aşağı Kayma Animasyonu */
+@keyframes slideDownDrawer {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 500px;
+  }
+}
+
+.hamburger-drawer {
+  animation: slideDownDrawer 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  overflow: hidden;
 }
 
 /* Spinner Animasyonu */

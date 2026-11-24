@@ -106,7 +106,7 @@ export default function Navbar({ user, onLogout }) {
 
         {/* MOBİL SLIDE-DOWN MENÜ */}
         {mobileMenuOpen && user && (
-          <div style={styles.mobileDrawer}>
+          <div style={styles.mobileDrawer} className="hamburger-drawer">
             <div style={styles.mobileUserInfo}>
               <div style={styles.avatarLarge}>
                 {user.firstName ? user.firstName.charAt(0).toUpperCase() : 'U'}
@@ -376,7 +376,7 @@ const styles = {
     backgroundColor: '#ffffff',
     borderTop: '1px solid #e2e8f0',
     padding: '16px',
-    animation: 'pageFadeIn 0.2s ease-in-out',
+    boxShadow: '0 8px 16px rgba(0, 0, 0, 0.08)',
   },
   mobileUserInfo: {
     display: 'flex',
