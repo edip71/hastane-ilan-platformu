@@ -1,653 +1,339 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
-import pg from 'pg';
-import bcrypt from 'bcryptjs';
-import rateLimit from 'express-rate-limit';
-import jwt from 'jsonwebtoken';
 import helmet from 'helmet';
-import crypto from 'crypto';
+import dotenv from 'dotenv';
+import rateLimit from 'express-rate-limit';
+import pkg from 'pg';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 
 dotenv.config();
 
-const app = express();
+const { Pool } = pkg;
 
-// YARDIMCI FONKSİYON: Türkçe karakter duyarlı isim büyük harf standardizasyonu
-// "osman yılmaz" → "Osman Yılmaz" | "İ/ı" ve "i" Türkçe kurallarına göre işlenir
+const app = express();
+const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET || 'hastane_ilan_super_gizli_jwt_anahtari_2026_staj_guvenlik_kodu_!';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+// Güvenlik & JSON ayrıştırma
+app.use(helmet());
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+  credentials: true
+}));
+app.use(express.json({ limit: '1mb' }));
+
+// Veritabanı Havuzu
+export const pool = new Pool({
+  user: process.env.DB_USER || 'postgres',
+  host: process.env.DB_HOST || 'localhost',
+  database: process.env.DB_NAME || 'hastane_ilan_db',
+  password: process.env.DB_PASSWORD || '123',
+  port: parseInt(process.env.DB_PORT || '5432', 10),
+});
+
+// Türkçe karakter duyarlı isim büyütme
 function capitalizeTurkish(str) {
-  if (!str || typeof str !== 'string') return '';
+  if (!str) return '';
   return str
-    .trim()
-    .replace(/\s+/g, ' ') // çoklu boşlukları tek boşluğa indir
+    .toLocaleLowerCase('tr-TR')
     .split(' ')
-    .map(word => {
-      if (!word) return '';
-      const firstChar = word[0];
-      // Türkçe özel büyük harf kuralları: i→İ, ı→I
-      let upperFirst;
-      if (firstChar === 'i') upperFirst = 'İ';
-      else if (firstChar === 'ı') upperFirst = 'I';
-      else upperFirst = firstChar.toLocaleUpperCase('tr-TR');
-      // Geri kalan harfler küçük (tr-TR kuralıyla: İ→i, I→ı)
-      return upperFirst + word.slice(1).toLocaleLowerCase('tr-TR');
-    })
+    .filter(Boolean)
+    .map(word => word.charAt(0).toLocaleUpperCase('tr-TR') + word.slice(1))
     .join(' ');
 }
-const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'hastane_varsayilan_yedek_gizli_anahtar';
 
-// Güvenlik: HTTP Header Zırhı (Helmet) - XSS, clickjacking ve MIME sniffing engeli
-app.use(helmet());
+// Güçlü şifre denetimi (En az 8 karakter, 1 büyük harf, 1 küçük harf, 1 rakam, 1 özel karakter)
+function isStrongPassword(password) {
+  if (!password || password.length < 8) return false;
+  const hasUpperCase = /[A-ZÇĞİÖŞÜ]/.test(password);
+  const hasLowerCase = /[a-zçğıöşü]/.test(password);
+  const hasNumbers = /[0-9]/.test(password);
+  const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>_\-+=[\]\\/]/.test(password);
+  return hasUpperCase && hasLowerCase && hasNumbers && hasSpecialChar;
+}
 
-// Güvenlik: Giriş denemeleri için sıkı Kaba Kuvvet (Brute-Force) sınırlaması (15 dakikada maks 10 deneme)
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  message: { error: 'Çok fazla hatalı giriş denemesi yaptınız. Lütfen 15 dakika sonra tekrar deneyin.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-// Güvenlik: Kayıt için Spam Koruması (15 dakikada maks 20 istek)
-const registerLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  message: { error: 'Çok fazla deneme yaptınız. Lütfen 15 dakika sonra tekrar deneyin.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-// Güvenlik: Şifre Sıfırlama İstekleri için Kötüye Kullanım / Spam Engeli (15 dakikada maks 5 istek)
-const passwordResetLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: { error: 'Çok fazla şifre sıfırlama talebinde bulundunuz. Lütfen 15 dakika sonra tekrar deneyin.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-// Middleware'ler
-app.use(cors());
-app.use(express.json({ limit: '10kb' })); // Güvenlik: Aşırı büyük gövde saldırılarını engellemek için sınır
-
-// PostgreSQL Bağlantı Havuzu (Connection Pool)
-const pool = new pg.Pool({
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || '123',
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432', 10),
-  database: process.env.DB_NAME || 'hastane_ilan_db',
-});
-
-// Veritabanı bağlantı testi ve users tablosunun otomatik kontrolü
+// Veritabanı İlk Başlatma (Görev 01-04 Kapsamı)
 async function initDb() {
   try {
-    const client = await pool.connect();
-    console.log('✅ PostgreSQL veritabanına başarıyla bağlandı!');
-
-    // Tablo henüz pgAdmin'de açılmadıysa bile otomatik oluşturalım:
-    await client.query(`
+    // 1. Users Tablosu
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
-        first_name VARCHAR(100) NOT NULL,
-        last_name VARCHAR(100) NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
+        first_name VARCHAR(50) NOT NULL,
+        last_name VARCHAR(50) NOT NULL,
+        email VARCHAR(100) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
         role VARCHAR(20) DEFAULT 'employee' NOT NULL,
         status VARCHAR(20) DEFAULT 'pending' NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+    `);
 
+    // 2. Audit Logs Tablosu (Denetim Kayıtları)
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS audit_logs (
         id SERIAL PRIMARY KEY,
-        performed_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-        target_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         action VARCHAR(50) NOT NULL,
+        target_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        performed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
         reason TEXT,
+        details JSONB,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS password_resets (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        token VARCHAR(128) NOT NULL UNIQUE,
-        expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-        used BOOLEAN DEFAULT FALSE NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS listings (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        title VARCHAR(150) NOT NULL,
-        description TEXT NOT NULL,
-        category VARCHAR(50) NOT NULL,
-        price NUMERIC(10, 2) DEFAULT NULL,
-        is_free BOOLEAN DEFAULT FALSE NOT NULL,
-        contact_info VARCHAR(200) DEFAULT NULL,
-        status VARCHAR(20) DEFAULT 'active' NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
-    console.log('✅ "users", "audit_logs", "password_resets" ve "listings" tabloları hazır!');
-    client.release();
+
+    // Varsayılan Admin Hesabı Kontrolü
+    const adminCheck = await pool.query('SELECT id FROM users WHERE email = $1', ['admin@hastane.gov.tr']);
+    if (adminCheck.rows.length === 0) {
+      const salt = await bcrypt.genSalt(10);
+      const hashedAdminPassword = await bcrypt.hash('Admin123!', salt);
+      await pool.query(`
+        INSERT INTO users (first_name, last_name, email, password_hash, role, status)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, ['Sistem', 'Yöneticisi', 'admin@hastane.gov.tr', hashedAdminPassword, 'admin', 'active']);
+      console.log('👑 Varsayılan Admin hesabı oluşturuldu (admin@hastane.gov.tr / Admin123!)');
+    }
+
+    // Varsayılan Çalışan Hesabı Kontrolü
+    const userCheck = await pool.query('SELECT id FROM users WHERE email = $1', ['doktor@hastane.gov.tr']);
+    if (userCheck.rows.length === 0) {
+      const salt = await bcrypt.genSalt(10);
+      const hashedUserPassword = await bcrypt.hash('Sifre123!', salt);
+      await pool.query(`
+        INSERT INTO users (first_name, last_name, email, password_hash, role, status)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, ['Ahmet', 'Yılmaz', 'doktor@hastane.gov.tr', hashedUserPassword, 'employee', 'active']);
+      console.log('🩺 Varsayılan Çalışan hesabı oluşturuldu (doktor@hastane.gov.tr / Sifre123!)');
+    }
+
+    console.log('✅ Veritabanı tabloları ("users", "audit_logs") hazır ve güncel!');
   } catch (err) {
-    console.error('❌ Veritabanı bağlantı hatası:', err.message);
+    console.error('❌ Veritabanı başlatma hatası:', err);
   }
 }
 
 initDb();
 
-// Test endpoint'i
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Hastane İlan API çalışıyor.' });
+// Rate Limiter'lar
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Çok fazla hatalı giriş denemesi. Lütfen 15 dakika sonra tekrar deneyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
-// GÖREV 02: KAYIT OL (REGISTER) ENDPOINT'İ
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 15,
+  message: { error: 'Çok fazla kayıt denemesi yapıldı. Lütfen daha sonra tekrar deneyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// JWT Doğrulama Middleware
+export function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'Oturum açmanız gerekiyor. Yetki tokenı bulunamadı.' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, decodedUser) => {
+    if (err) {
+      return res.status(403).json({ error: 'Geçersiz veya süresi dolmuş oturum. Lütfen tekrar giriş yapın.' });
+    }
+    req.user = decodedUser;
+    next();
+  });
+}
+
+// Admin Yetki Kontrol Middleware
+export function requireAdmin(req, res, next) {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Erişim reddedildi. Bu işlem için yönetici yetkisi gereklidir.' });
+  }
+  next();
+}
+
+// -------------------------------------------------------------
+// GÖREV 02: KAYIT OL (REGISTER)
+// -------------------------------------------------------------
 app.post('/api/auth/register', registerLimiter, async (req, res) => {
   try {
-    const { firstName, lastName, email, password, confirmPassword } = req.body;
+    const { firstName, lastName, email, password, confirmPassword, kvkkApproved } = req.body;
 
-    // 1. Boş alan kontrolü
+    // 1. Alan Zorunluluk Kontrolleri
     if (!firstName || !lastName || !email || !password || !confirmPassword) {
-      return res.status(400).json({ error: 'Lütfen tüm alanları doldurun.' });
+      return res.status(400).json({ error: 'Lütfen tüm zorunlu alanları doldurun.' });
     }
 
-    // Karakter uzunluğu güvenlik kontrolleri (Buffer overflow / DB şişirme engeli)
-    if (firstName.length > 50 || lastName.length > 50) {
-      return res.status(400).json({ error: 'Ad veya soyad 50 karakterden uzun olamaz.' });
+    // 2. Ad ve Soyad Kontrolü (Minimum 2 karakter, tek harf veya boşluk kabul edilmez)
+    const trimmedFirst = firstName.trim();
+    const trimmedLast = lastName.trim();
+
+    if (trimmedFirst.length < 2 || trimmedLast.length < 2) {
+      return res.status(400).json({ error: 'Ad ve soyad en az 2 karakter olmalıdır.' });
     }
 
-    if (password.length > 100) {
-      return res.status(400).json({ error: 'Şifre en fazla 100 karakter olabilir.' });
+    const nameRegex = /^[a-zA-ZçÇğĞıİöÖşŞüÜ\s]+$/;
+    if (!nameRegex.test(trimmedFirst) || !nameRegex.test(trimmedLast)) {
+      return res.status(400).json({ error: 'Ad ve soyad yalnızca harflerden oluşmalıdır.' });
     }
 
-    // 2. Şifre eşleşme kontrolü
-    if (password !== confirmPassword) {
-      return res.status(400).json({ error: 'Girdiğiniz şifreler birbiriyle uyuşmuyor.' });
+    // 3. KVKK Aydınlatma Metni Kontrolü
+    if (kvkkApproved !== true) {
+      return res.status(400).json({ error: 'Kayıt olabilmek için KVKK Aydınlatma Metnini onaylamanız gerekmektedir.' });
     }
 
-    // 3. Şifre uzunluğu
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Şifreniz en az 6 karakter olmalıdır.' });
-    }
-
-    // 4. Kurumsal e-posta veya e-posta formatı kontrolü
+    // 4. E-posta Format Kontrolü
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: 'Geçerli bir e-posta adresi giriniz.' });
+    const cleanEmail = email.toLowerCase().trim();
+    if (!emailRegex.test(cleanEmail)) {
+      return res.status(400).json({ error: 'Lütfen geçerli bir e-posta adresi girin.' });
     }
 
-    // 5. E-posta daha önce kullanılmış mı?
-    const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase().trim()]);
+    // 5. Şifre Gücü ve Eşleşme Kontrolü
+    if (password !== confirmPassword) {
+      return res.status(400).json({ error: 'Girdiğiniz şifreler birbiriyle eşleşmiyor.' });
+    }
+
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({
+        error: 'Şifreniz en az 8 karakter olmalı; en az bir büyük harf, bir küçük harf, bir rakam ve bir özel karakter içermelidir.'
+      });
+    }
+
+    // 6. E-posta Benzersizlik Kontrolü
+    const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [cleanEmail]);
     if (existingUser.rows.length > 0) {
-      return res.status(400).json({ error: 'Bu e-posta adresi ile kayıtlı bir hesap zaten var.' });
+      return res.status(409).json({ error: 'Bu e-posta adresi ile kayıtlı bir hesap zaten bulunmaktadır.' });
     }
 
-    // 6. Şifreyi hash'leme (bcrypt ile güvenli saklama)
-    const saltRounds = 10;
-    const passwordHash = await bcrypt.hash(password, saltRounds);
+    // 7. Parola Hashleme & Veritabanına Kayıt (Daima 'employee' ve 'pending' durumunda)
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
 
-    // 7. Görev 02 Kuralı: Dışarıdan admin/moderator gönderilse bile HESAP HER ZAMAN 'employee' ve 'pending' olacak!
-    // İsimler Türkçe karakter duyarlı büyük harf standardizasyonundan geçirilir ("osman" → "Osman")
-    const cleanFirstName = capitalizeTurkish(firstName);
-    const cleanLastName = capitalizeTurkish(lastName);
+    const formattedFirstName = capitalizeTurkish(trimmedFirst);
+    const formattedLastName = capitalizeTurkish(trimmedLast);
 
-    const newUser = await pool.query(
+    const insertResult = await pool.query(
       `INSERT INTO users (first_name, last_name, email, password_hash, role, status)
        VALUES ($1, $2, $3, $4, 'employee', 'pending')
        RETURNING id, first_name, last_name, email, role, status, created_at`,
-      [cleanFirstName, cleanLastName, email.toLowerCase().trim(), passwordHash]
+      [formattedFirstName, formattedLastName, cleanEmail, passwordHash]
     );
 
-    // 8. Başarı yanıtı
-    res.status(201).json({
-      success: true,
-      message: 'Kaydınız başarıyla alındı. Yönetici onayı bekleniyor.',
-      user: newUser.rows[0],
+    const newUser = insertResult.rows[0];
+
+    // Denetim Günlüğü Kaydı
+    await pool.query(
+      `INSERT INTO audit_logs (action, target_user_id, reason, details)
+       VALUES ($1, $2, $3, $4)`,
+      ['REGISTER_APPLICATION', newUser.id, 'Yeni personel kayıt başvurusu oluşturuldu.', { email: cleanEmail }]
+    );
+
+    return res.status(201).json({
+      message: 'Kayıt başvurunuz başarıyla alındı. Yönetici onayının ardından sisteme giriş yapabilirsiniz.',
+      user: {
+        id: newUser.id,
+        firstName: newUser.first_name,
+        lastName: newUser.last_name,
+        email: newUser.email,
+        status: newUser.status,
+      }
     });
-  } catch (error) {
-    console.error('Kayıt hatası:', error);
-    res.status(500).json({ error: 'Sunucuda bir hata oluştu. Lütfen tekrar deneyin.' });
+
+  } catch (err) {
+    console.error('Kayıt Hatası:', err);
+    return res.status(500).json({ error: 'Sunucu hatası nedeniyle kayıt yapılamadı.' });
   }
 });
 
-// GÖREV 03: GİRİŞ YAP (LOGIN) ENDPOINT'İ
+// -------------------------------------------------------------
+// GÖREV 03: GİRİŞ YAP (LOGIN) & KULLANICI BİLGİSİ
+// -------------------------------------------------------------
 app.post('/api/auth/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // 1. Boş alan kontrolü
     if (!email || !password) {
       return res.status(400).json({ error: 'E-posta ve şifre alanları zorunludur.' });
     }
 
     const cleanEmail = email.toLowerCase().trim();
+    const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
 
-    // 2. Kullanıcıyı bul
-    const userResult = await pool.query(
-      'SELECT id, first_name, last_name, email, password_hash, role, status FROM users WHERE email = $1',
-      [cleanEmail]
-    );
-
-    // Güvenlik İlkesi: Kullanıcı bulunamazsa şifre kontrolü yapılmadan çıkılır,
-    // ancak saldırganın e-postanın kayıtlı olup olmadığını anlamaması için genel mesaj verilir.
     if (userResult.rows.length === 0) {
-      return res.status(401).json({ error: 'Geçersiz e-posta veya şifre girdiniz.' });
+      return res.status(401).json({ error: 'E-posta veya şifre hatalı.' });
     }
 
     const user = userResult.rows[0];
 
-    // 3. Şifre doğrulama (bcrypt karşılaştırması)
+    // Şifre Doğrulama
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
     if (!isPasswordValid) {
-      return res.status(401).json({ error: 'Geçersiz e-posta veya şifre girdiniz.' });
+      return res.status(401).json({ error: 'E-posta veya şifre hatalı.' });
     }
 
-    // 4. PDF Kuralı: Hesap Onay Durumu Kontrolleri
+    // Hesap Durumu Kontrolü (Başarı kontrol listesi: Bekleyen ve askıdaki hesaplar engellenmeli)
     if (user.status === 'pending') {
       return res.status(403).json({
-        error: 'Hesabınız henüz yönetici tarafından onaylanmamıştır. Lütfen onay sürecini bekleyin.',
-        statusCode: 'ACCOUNT_PENDING',
+        error: 'Hesabınız henüz yönetici tarafından onaylanmamıştır. Lütfen onay bekleyin.'
       });
     }
 
     if (user.status === 'suspended') {
       return res.status(403).json({
-        error: 'Hesabınız askıya alınmıştır. Kurum yönetimi ile iletişime geçiniz.',
-        statusCode: 'ACCOUNT_SUSPENDED',
+        error: 'Hesabınız askıya alınmıştır. Detaylı bilgi için kurum yöneticisiyle iletişime geçin.'
+      });
+    }
+
+    if (user.status === 'rejected') {
+      return res.status(403).json({
+        error: 'Kayıt başvurunuz reddedilmiştir.'
       });
     }
 
     if (user.status !== 'active') {
       return res.status(403).json({
-        error: 'Hesabınız aktif durumda değildir.',
-        statusCode: 'ACCOUNT_INACTIVE',
+        error: 'Hesabınız aktif durumda değildir.'
       });
     }
 
-    // 5. Güvenli JWT (JSON Web Token) Oturum Anahtarı Üretimi
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-      },
-      JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-    );
-
-    // 6. Başarılı Giriş Yanıtı (Şifre hash'i asla geri dönülmez!)
-    res.json({
-      success: true,
-      message: 'Giriş başarılı.',
-      token,
-      user: {
-        id: user.id,
-        firstName: user.first_name,
-        lastName: user.last_name,
-        email: user.email,
-        role: user.role,
-        status: user.status,
-      },
-    });
-  } catch (error) {
-    console.error('Giriş hatası:', error);
-    res.status(500).json({ error: 'Sunucuda bir hata oluştu. Lütfen tekrar deneyin.' });
-  }
-});
-
-// GÖREV 05: ŞİFREMİ UNUTTUM & SIFIRLAMA ENDPOINT'LERİ
-
-// 1. Şifre Sıfırlama Talebi Gönder
-app.post('/api/auth/forgot-password', passwordResetLimiter, async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    if (!email || typeof email !== 'string') {
-      return res.status(400).json({ error: 'Lütfen geçerli bir e-posta adresi girin.' });
-    }
-
-    const cleanEmail = email.toLowerCase().trim();
-
-    // KVKK & Güvenlik Kuralı (Anti-Enumeration):
-    // Kullanıcı varsa veya yoksa aynı başarı mesajı döner. Böylece saldırganlar hastane maillerini tarayamaz.
-    const genericSuccessResponse = {
-      success: true,
-      message: 'Eğer bu kurumsal e-posta adresi sistemimizde kayıtlı ise, şifre sıfırlama bağlantısı gönderilmiştir.',
+    // JWT Token Üretimi
+    const tokenPayload = {
+      id: user.id,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      email: user.email,
+      role: user.role,
+      status: user.status
     };
 
-    const userResult = await pool.query('SELECT id, email, status FROM users WHERE email = $1', [cleanEmail]);
+    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
-    if (userResult.rows.length === 0) {
-      return res.json(genericSuccessResponse);
-    }
-
-    const targetUser = userResult.rows[0];
-
-    // Hesap onaylanmamış veya askıdaysa şifre sıfırlama linki oluşturulmaz
-    if (targetUser.status !== 'active') {
-      return res.json(genericSuccessResponse);
-    }
-
-    // Kriptografik rastgele ve güvenli tek kullanımlık token üretimi (64 karakter hex)
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    
-    // Geçerlilik süresi: Tam 15 dakika (900.000 ms)
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-
-    // Varsa bu kullanıcının daha önceki kullanılmamış eski tokenlarını geçersiz kıl
-    await pool.query('UPDATE password_resets SET used = TRUE WHERE user_id = $1 AND used = FALSE', [targetUser.id]);
-
-    // Yeni token kaydı
-    await pool.query(
-      `INSERT INTO password_resets (user_id, token, expires_at, used)
-       VALUES ($1, $2, $3, FALSE)`,
-      [targetUser.id, resetToken, expiresAt]
-    );
-
-    const resetLink = `http://localhost:5173/sifremi-sifirla/${resetToken}`;
-    console.log(`\n🔑 [ŞİFRE SIFIRLAMA TALEBİ] E-posta: ${cleanEmail}`);
-    console.log(`🔗 Sıfırlama Bağlantısı: ${resetLink}`);
-    console.log(`⏳ Geçerlilik Süresi: 15 dakika\n`);
-
-    // Geliştirme ortamında kolay test edilebilmesi için devToken da yanıta eklenir
-    return res.json({
-      ...genericSuccessResponse,
-      devToken: resetToken,
-      resetLink,
+    return res.status(200).json({
+      message: 'Giriş başarılı.',
+      token,
+      user: tokenPayload
     });
-  } catch (error) {
-    console.error('Şifre sıfırlama talebi hatası:', error);
-    res.status(500).json({ error: 'Sunucuda bir hata oluştu. Lütfen tekrar deneyin.' });
+
+  } catch (err) {
+    console.error('Giriş Hatası:', err);
+    return res.status(500).json({ error: 'Sunucu hatası nedeniyle giriş yapılamadı.' });
   }
 });
 
-// 2. Sıfırlama Token'ının Geçerliliğini Doğrula
-app.get('/api/auth/verify-reset-token/:token', async (req, res) => {
-  try {
-    const { token } = req.params;
-
-    if (!token || token.length < 32) {
-      return res.status(400).json({ valid: false, error: 'Geçersiz veya bozuk sıfırlama bağlantısı.' });
-    }
-
-    const tokenResult = await pool.query(
-      `SELECT pr.id, pr.user_id, pr.expires_at, pr.used, u.email, u.first_name, u.last_name
-       FROM password_resets pr
-       JOIN users u ON pr.user_id = u.id
-       WHERE pr.token = $1`,
-      [token]
-    );
-
-    if (tokenResult.rows.length === 0) {
-      return res.status(404).json({ valid: false, error: 'Sıfırlama bağlantısı bulunamadı veya geçersiz.' });
-    }
-
-    const record = tokenResult.rows[0];
-
-    if (record.used) {
-      return res.status(400).json({ valid: false, error: 'Bu sıfırlama bağlantısı daha önce kullanılmış.' });
-    }
-
-    if (new Date() > new Date(record.expires_at)) {
-      return res.status(400).json({ valid: false, error: 'Sıfırlama bağlantısının süresi dolmuş (15 dakika sınırı).' });
-    }
-
-    return res.json({
-      valid: true,
-      message: 'Bağlantı geçerli.',
-      email: record.email,
-      firstName: record.first_name,
-    });
-  } catch (error) {
-    console.error('Token doğrulama hatası:', error);
-    res.status(500).json({ valid: false, error: 'Sunucu hatası oluştu.' });
-  }
-});
-
-// 3. Yeni Şifreyi Kaydet ve Token'ı İptal Et
-app.post('/api/auth/reset-password', async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { token, newPassword, confirmPassword } = req.body;
-
-    if (!token || !newPassword || !confirmPassword) {
-      return res.status(400).json({ error: 'Lütfen tüm alanları doldurun.' });
-    }
-
-    if (newPassword !== confirmPassword) {
-      return res.status(400).json({ error: 'Girdiğiniz yeni şifreler birbiriyle uyuşmuyor.' });
-    }
-
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: 'Yeni şifreniz en az 6 karakter olmalıdır.' });
-    }
-
-    // Token kontrolü
-    const tokenResult = await client.query(
-      `SELECT pr.id, pr.user_id, pr.expires_at, pr.used
-       FROM password_resets pr
-       WHERE pr.token = $1`,
-      [token]
-    );
-
-    if (tokenResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Geçersiz veya bulunamayan sıfırlama bağlantısı.' });
-    }
-
-    const record = tokenResult.rows[0];
-
-    if (record.used) {
-      return res.status(400).json({ error: 'Bu bağlantı daha önce kullanılmış. Lütfen yeni talepte bulunun.' });
-    }
-
-    if (new Date() > new Date(record.expires_at)) {
-      return res.status(400).json({ error: 'Bu bağlantının süresi dolmuştur (15 dakika). Lütfen yeni talepte bulunun.' });
-    }
-
-    // Kullanıcının mevcut şifresini kontrol et: Eski şifre ile yeni şifre AYNI OLAMAZ!
-    const userResult = await client.query('SELECT password_hash FROM users WHERE id = $1', [record.user_id]);
-    if (userResult.rows.length > 0) {
-      const isSamePassword = await bcrypt.compare(newPassword, userResult.rows[0].password_hash);
-      if (isSamePassword) {
-        return res.status(400).json({ error: 'Yeni şifreniz mevcut (eski) şifreniz ile aynı olamaz. Lütfen farklı ve güvenli bir şifre belirleyin.' });
-      }
-    }
-
-    // Şifreyi bcrypt ile güvenli hash'le
-    const saltRounds = 10;
-    const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
-
-    // Atomik Transaction: Şifreyi güncelle ve token'ı used=true yap
-    await client.query('BEGIN');
-
-    await client.query(
-      `UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-      [newPasswordHash, record.user_id]
-    );
-
-    await client.query(
-      `UPDATE password_resets SET used = TRUE WHERE id = $1`,
-      [record.id]
-    );
-
-    await client.query('COMMIT');
-
-    return res.json({
-      success: true,
-      message: 'Şifreniz başarıyla güncellendi! Yeni şifrenizle kurumsal giriş yapabilirsiniz.',
-    });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Şifre güncelleme hatası:', error);
-    res.status(500).json({ error: 'Şifre güncellenirken sunucuda bir hata oluştu.' });
-  } finally {
-    client.release();
-  }
-});
-
-// Güvenlik Middleware'i: Token ve Oturum Doğrulama
-function authenticateToken(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // "Bearer TOKEN"
-
-  if (!token) {
-    return res.status(401).json({ error: 'Oturum bilgisi bulunamadı. Lütfen giriş yapın.' });
-  }
-
-  jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err) {
-      return res.status(403).json({ error: 'Oturum süreniz dolmuş veya geçersiz. Lütfen tekrar giriş yapın.' });
-    }
-    req.user = decoded;
-    next();
-  });
-}
-
-// Güvenlik Middleware'i: Sadece Yetkili Roller (Admin / Moderator) Erişebilir
-function requireRole(...allowedRoles) {
-  return (req, res, next) => {
-    if (!req.user || !allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({
-        error: 'Bu işlem için yetkiniz bulunmamaktadır. Yalnızca yetkili yöneticiler erişebilir.',
-        statusCode: 'FORBIDDEN_ROLE',
-      });
-    }
-    next();
-  };
-}
-
-// ---------------- GÖREV 04: YÖNETİM › KULLANICILAR API'LERİ ----------------
-
-// 1. Kullanıcıları Listele (Arama, Durum Filtresi)
-app.get('/api/admin/users', authenticateToken, requireRole('admin', 'moderator'), async (req, res) => {
-  try {
-    const { status, search } = req.query;
-
-    let queryText = `
-      SELECT id, first_name, last_name, email, role, status, created_at, updated_at
-      FROM users
-      WHERE 1=1
-    `;
-    const queryParams = [];
-
-    // Durum filtresi (pending, active, suspended)
-    if (status && status !== 'all') {
-      queryParams.push(status);
-      queryText += ` AND status = $${queryParams.length}`;
-    }
-
-    // Arama (Ad, Soyad veya E-posta) - SQL Injection korumalı parametreli sorgu
-    if (search && search.trim() !== '') {
-      queryParams.push(`%${search.trim().toLowerCase()}%`);
-      queryText += ` AND (LOWER(first_name) LIKE $${queryParams.length} OR LOWER(last_name) LIKE $${queryParams.length} OR LOWER(email) LIKE $${queryParams.length})`;
-    }
-
-    queryText += ` ORDER BY created_at DESC`;
-
-    const result = await pool.query(queryText, queryParams);
-    res.json({ users: result.rows });
-  } catch (error) {
-    console.error('Kullanıcı listeleme hatası:', error);
-    res.status(500).json({ error: 'Kullanıcı listesi alınırken sunucu hatası oluştu.' });
-  }
-});
-
-// 2. Kullanıcı Durumunu Güncelle (Onayla, Reddet, Askıya Al, Etkinleştir)
-app.patch('/api/admin/users/:id/status', authenticateToken, requireRole('admin', 'moderator'), async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const targetUserId = parseInt(req.params.id, 10);
-    const { action, reason } = req.body; // 'APPROVE', 'REJECT', 'SUSPEND', 'ACTIVATE'
-
-    if (!targetUserId || isNaN(targetUserId)) {
-      return res.status(400).json({ error: 'Geçersiz kullanıcı kimliği.' });
-    }
-
-    // Hedef kullanıcıyı bul
-    const userCheck = await client.query('SELECT id, role, status, email FROM users WHERE id = $1', [targetUserId]);
-    if (userCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
-    }
-
-    const targetUser = userCheck.rows[0];
-
-    // Güvenlik Kuralı: Son kalan adminin durumu düşürülemez veya askıya alınamaz
-    if (targetUser.role === 'admin' && (action === 'SUSPEND' || action === 'REJECT')) {
-      const adminCountResult = await client.query("SELECT COUNT(*) FROM users WHERE role = 'admin' AND status = 'active'");
-      if (parseInt(adminCountResult.rows[0].count, 10) <= 1) {
-        return res.status(400).json({ error: 'Sistemde en az bir aktif yönetici bulunmalıdır. Bu yönetici askıya alınamaz.' });
-      }
-    }
-
-    // PDF Kuralı: Ret gerekçesi zorunludur
-    if (action === 'REJECT' && (!reason || reason.trim().length < 5)) {
-      return res.status(400).json({ error: 'Başvuruyu reddederken en az 5 karakterlik geçerli bir gerekçe belirtmelisiniz.' });
-    }
-
-    let newStatus = '';
-    if (action === 'APPROVE' || action === 'ACTIVATE') newStatus = 'active';
-    else if (action === 'SUSPEND') newStatus = 'suspended';
-    else if (action === 'REJECT') newStatus = 'rejected';
-    else {
-      return res.status(400).json({ error: 'Geçersiz durum eylemi.' });
-    }
-
-    // Transaction Başlat: Kullanıcı durumu ile Audit Log aynı anda güvenle yazılır
-    await client.query('BEGIN');
-
-    await client.query(
-      'UPDATE users SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-      [newStatus, targetUserId]
-    );
-
-    await client.query(
-      `INSERT INTO audit_logs (performed_by_id, target_user_id, action, reason)
-       VALUES ($1, $2, $3, $4)`,
-      [req.user.id, targetUserId, action, reason ? reason.trim() : null]
-    );
-
-    await client.query('COMMIT');
-
-    res.json({
-      success: true,
-      message: `Kullanıcı durumu başarıyla güncellendi: ${newStatus}`,
-      user: { id: targetUserId, status: newStatus },
-    });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Kullanıcı durum güncelleme hatası:', error);
-    res.status(500).json({ error: 'İşlem gerçekleştirilemedi. Veritabanı geri alındı.' });
-  } finally {
-    client.release();
-  }
-});
-
-// 3. Kullanıcı İşlem Geçmişi (Audit Logs)
-app.get('/api/admin/users/:id/logs', authenticateToken, requireRole('admin', 'moderator'), async (req, res) => {
-  try {
-    const targetUserId = parseInt(req.params.id, 10);
-    const result = await pool.query(
-      `SELECT a.id, a.action, a.reason, a.created_at,
-              u.first_name as performed_by_first_name, u.last_name as performed_by_last_name
-       FROM audit_logs a
-       LEFT JOIN users u ON a.performed_by_id = u.id
-       WHERE a.target_user_id = $1
-       ORDER BY a.created_at DESC`,
-      [targetUserId]
-    );
-    res.json({ logs: result.rows });
-  } catch (error) {
-    res.status(500).json({ error: 'İşlem geçmişi alınamadı.' });
-  }
-});
+// Oturum Doğrulama Endpoint'i (Frontend token kontrolü için)
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
     const userResult = await pool.query(
-      'SELECT id, first_name, last_name, email, role, status FROM users WHERE id = $1',
+      'SELECT id, first_name, last_name, email, role, status, created_at FROM users WHERE id = $1',
       [req.user.id]
     );
 
@@ -657,12 +343,12 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 
     const user = userResult.rows[0];
 
-    // Oturum anında hesap askıya alınmışsa hemen engelle (PDF Görev 03 kuralı)
+    // Hesap askıya alınmışsa oturumu sonlandır
     if (user.status !== 'active') {
       return res.status(403).json({ error: 'Hesabınız aktif değildir.' });
     }
 
-    res.json({
+    return res.json({
       user: {
         id: user.id,
         firstName: user.first_name,
@@ -670,203 +356,154 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
         email: user.email,
         role: user.role,
         status: user.status,
-      },
+        createdAt: user.created_at
+      }
     });
-  } catch (error) {
-    res.status(500).json({ error: 'Sunucu hatası.' });
+  } catch (err) {
+    console.error('Me Endpoint Hatası:', err);
+    return res.status(500).json({ error: 'Sunucu hatası.' });
   }
 });
 
-// ══════════════════════════════════════════════════════════
-// GÖREV 06 & 07: İLAN YÖNETİMİ ENDPOINT'LERİ
-// ══════════════════════════════════════════════════════════
+// -------------------------------------------------------------
+// GÖREV 04: YÖNETİM › KULLANICILAR (ADMIN USERS)
+// -------------------------------------------------------------
 
-// İlan kategorileri sabiti (güvenilir kaynak: backend)
-const VALID_CATEGORIES = [
-  'nobet-degisimi',
-  'ikinci-el-esya',
-  'ev-arkadasligi',
-  'kiralik-ev',
-  'ulasim-yol-arkadasligi',
-  'kitap-ders-materyali',
-  'diger',
-];
-
-// 1. YENİ İLAN OLUŞTUR
-app.post('/api/listings', authenticateToken, async (req, res) => {
+// Kullanıcıları Listeleme & Filtreleme (Yalnızca Admin)
+app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { title, description, category, price, isFree, contactInfo } = req.body;
+    const { status, search } = req.query;
+    let queryText = 'SELECT id, first_name, last_name, email, role, status, created_at, updated_at FROM users';
+    const queryParams = [];
+    const whereClauses = [];
 
-    // Zorunlu alan kontrolleri
-    if (!title || !title.trim()) return res.status(400).json({ error: 'İlan başlığı zorunludur.' });
-    if (!description || !description.trim()) return res.status(400).json({ error: 'İlan açıklaması zorunludur.' });
-    if (!category) return res.status(400).json({ error: 'İlan kategorisi zorunludur.' });
-
-    // Uzunluk güvenlik sınırları
-    if (title.trim().length > 150) return res.status(400).json({ error: 'Başlık en fazla 150 karakter olabilir.' });
-    if (description.trim().length > 2000) return res.status(400).json({ error: 'Açıklama en fazla 2000 karakter olabilir.' });
-
-    // Kategori doğrulama (istemciye asla güvenme prensibi)
-    if (!VALID_CATEGORIES.includes(category)) {
-      return res.status(400).json({ error: 'Geçersiz ilan kategorisi.' });
+    if (status && status !== 'all') {
+      queryParams.push(status);
+      whereClauses.push(`status = $${queryParams.length}`);
     }
 
-    // Fiyat kontrolü: İlan ücretsiz değilse geçerli bir sayı girilmeli
-    let cleanPrice = null;
-    if (!isFree) {
-      const parsedPrice = parseFloat(price);
-      if (isNaN(parsedPrice) || parsedPrice < 0) {
-        return res.status(400).json({ error: 'Geçerli bir fiyat giriniz veya "Ücretsiz" seçeneğini işaretleyin.' });
+    if (search && search.trim() !== '') {
+      queryParams.push(`%${search.trim().toLowerCase()}%`);
+      whereClauses.push(`(LOWER(first_name) LIKE $${queryParams.length} OR LOWER(last_name) LIKE $${queryParams.length} OR LOWER(email) LIKE $${queryParams.length})`);
+    }
+
+    if (whereClauses.length > 0) {
+      queryText += ' WHERE ' + whereClauses.join(' AND ');
+    }
+
+    queryText += ' ORDER BY created_at DESC';
+
+    const result = await pool.query(queryText, queryParams);
+    return res.json({ users: result.rows });
+  } catch (err) {
+    console.error('Admin Kullanıcı Listeleme Hatası:', err);
+    return res.status(500).json({ error: 'Kullanıcılar getirilemedi.' });
+  }
+});
+
+// Kullanıcı Durumunu Güncelleme (Onayla, Reddet, Askıya Al, Etkinleştir)
+app.patch('/api/admin/users/:id/status', authenticateToken, requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const targetUserId = parseInt(req.params.id, 10);
+    const { action, reason } = req.body; // 'APPROVE', 'REJECT', 'SUSPEND', 'ACTIVATE'
+
+    if (isNaN(targetUserId)) {
+      return res.status(400).json({ error: 'Geçersiz kullanıcı kimliği.' });
+    }
+
+    // Hedef kullanıcıyı bul
+    const userCheck = await client.query('SELECT * FROM users WHERE id = $1', [targetUserId]);
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
+    }
+    const targetUser = userCheck.rows[0];
+
+    // Admin kendi kendini askıya alamaz veya reddedemez
+    if (targetUser.id === req.user.id && (action === 'SUSPEND' || action === 'REJECT')) {
+      return res.status(400).json({ error: 'Yönetici kendi hesabını askıya alamaz veya reddedemez.' });
+    }
+
+    let newStatus = '';
+    let auditAction = '';
+
+    if (action === 'APPROVE') {
+      newStatus = 'active';
+      auditAction = 'APPROVE_USER';
+    } else if (action === 'REJECT') {
+      if (!reason || reason.trim().length < 5) {
+        return res.status(400).json({ error: 'Ret işlemi için en az 5 karakterlik geçerli bir gerekçe belirtilmelidir.' });
       }
-      cleanPrice = parsedPrice;
+      newStatus = 'rejected';
+      auditAction = 'REJECT_USER';
+    } else if (action === 'SUSPEND') {
+      newStatus = 'suspended';
+      auditAction = 'SUSPEND_USER';
+    } else if (action === 'ACTIVATE') {
+      newStatus = 'active';
+      auditAction = 'ACTIVATE_USER';
+    } else {
+      return res.status(400).json({ error: 'Geçersiz işlem türü.' });
     }
 
-    const result = await pool.query(
-      `INSERT INTO listings (user_id, title, description, category, price, is_free, contact_info, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
-       RETURNING *`,
+    // Atomik Transaction Başlat
+    await client.query('BEGIN');
+
+    // 1. Durumu güncelle
+    await client.query(
+      'UPDATE users SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      [newStatus, targetUserId]
+    );
+
+    // 2. Denetim günlüğüne kaydet (Audit Log)
+    await client.query(
+      `INSERT INTO audit_logs (action, target_user_id, performed_by, reason, details)
+       VALUES ($1, $2, $3, $4, $5)`,
       [
+        auditAction,
+        targetUserId,
         req.user.id,
-        title.trim(),
-        description.trim(),
-        category,
-        cleanPrice,
-        isFree ? true : false,
-        contactInfo ? contactInfo.trim().substring(0, 200) : null,
+        reason || null,
+        { previousStatus: targetUser.status, newStatus, performedByEmail: req.user.email }
       ]
     );
 
-    res.status(201).json({ success: true, listing: result.rows[0] });
-  } catch (error) {
-    console.error('İlan oluşturma hatası:', error);
-    res.status(500).json({ error: 'İlan oluşturulurken sunucu hatası oluştu.' });
-  }
-});
+    await client.query('COMMIT');
 
-// 2. İLANLARI LİSTELE (Filtreleme + Arama + Sayfalama)
-app.get('/api/listings', authenticateToken, async (req, res) => {
-  try {
-    const { category, search, page = 1, limit = 12 } = req.query;
-
-    const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 12));
-    const offset = (pageNum - 1) * limitNum;
-
-    let queryText = `
-      SELECT
-        l.id, l.title, l.description, l.category,
-        l.price, l.is_free, l.contact_info, l.status,
-        l.created_at,
-        u.first_name AS author_first_name,
-        u.last_name AS author_last_name,
-        u.email AS author_email
-      FROM listings l
-      JOIN users u ON l.user_id = u.id
-      WHERE l.status = 'active'
-    `;
-    const queryParams = [];
-
-    // Kategori filtresi
-    if (category && category !== 'tumu' && VALID_CATEGORIES.includes(category)) {
-      queryParams.push(category);
-      queryText += ` AND l.category = $${queryParams.length}`;
-    }
-
-    // Metin arama (başlık ve açıklamada)
-    if (search && search.trim()) {
-      queryParams.push(`%${search.trim().toLowerCase()}%`);
-      queryText += ` AND (LOWER(l.title) LIKE $${queryParams.length} OR LOWER(l.description) LIKE $${queryParams.length})`;
-    }
-
-    // Toplam sayı sorgusu (sayfalama için)
-    const countResult = await pool.query(
-      `SELECT COUNT(*) FROM listings l WHERE l.status = 'active'${
-        category && category !== 'tumu' && VALID_CATEGORIES.includes(category) ? ` AND l.category = '${category}'` : ''
-      }${search && search.trim() ? ` AND (LOWER(l.title) LIKE '%${search.trim().toLowerCase()}%' OR LOWER(l.description) LIKE '%${search.trim().toLowerCase()}%')` : ''}`
-    );
-
-    queryText += ` ORDER BY l.created_at DESC LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
-    queryParams.push(limitNum, offset);
-
-    const result = await pool.query(queryText, queryParams);
-
-    res.json({
-      listings: result.rows,
-      pagination: {
-        total: parseInt(countResult.rows[0].count, 10),
-        page: pageNum,
-        limit: limitNum,
-        totalPages: Math.ceil(parseInt(countResult.rows[0].count, 10) / limitNum),
-      },
+    return res.json({
+      message: `Kullanıcı durumu başarıyla güncellendi: ${newStatus}`,
+      user: { id: targetUserId, status: newStatus }
     });
-  } catch (error) {
-    console.error('İlan listeleme hatası:', error);
-    res.status(500).json({ error: 'İlanlar yüklenirken sunucu hatası oluştu.' });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Kullanıcı durum güncelleme hatası:', err);
+    return res.status(500).json({ error: 'Durum güncellenirken bir hata oluştu.' });
+  } finally {
+    client.release();
   }
 });
 
-// 3. TEK İLAN DETAYI
-app.get('/api/listings/:id', authenticateToken, async (req, res) => {
+// Bir Kullanıcının Denetim Geçmişini Getirme (Audit Logs)
+app.get('/api/admin/users/:id/logs', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const id = parseInt(req.params.id, 10);
-    if (isNaN(id)) return res.status(400).json({ error: 'Geçersiz ilan kimliği.' });
-
+    const targetUserId = parseInt(req.params.id, 10);
     const result = await pool.query(
-      `SELECT l.*, u.first_name AS author_first_name, u.last_name AS author_last_name, u.email AS author_email
-       FROM listings l JOIN users u ON l.user_id = u.id
-       WHERE l.id = $1 AND l.status = 'active'`,
-      [id]
+      `SELECT al.*, u.first_name as performed_by_first_name, u.last_name as performed_by_last_name
+       FROM audit_logs al
+       LEFT JOIN users u ON al.performed_by = u.id
+       WHERE al.target_user_id = $1
+       ORDER BY al.created_at DESC`,
+      [targetUserId]
     );
-
-    if (result.rows.length === 0) return res.status(404).json({ error: 'İlan bulunamadı veya silinmiş.' });
-
-    res.json({ listing: result.rows[0] });
-  } catch (error) {
-    res.status(500).json({ error: 'İlan detayı alınamadı.' });
+    return res.json({ logs: result.rows });
+  } catch (err) {
+    console.error('Log getirme hatası:', err);
+    return res.status(500).json({ error: 'Denetim kayıtları alınamadı.' });
   }
 });
 
-// 4. KENDİ İLANINI SİL (Güvenli: sadece kendi ilanını silebilir)
-app.delete('/api/listings/:id', authenticateToken, async (req, res) => {
-  try {
-    const id = parseInt(req.params.id, 10);
-    if (isNaN(id)) return res.status(400).json({ error: 'Geçersiz ilan kimliği.' });
-
-    // İlan sahibi kontrolü (admin her ilanı silebilir, normal kullanıcı yalnızca kendi ilanını)
-    const check = await pool.query('SELECT user_id FROM listings WHERE id = $1', [id]);
-    if (check.rows.length === 0) return res.status(404).json({ error: 'İlan bulunamadı.' });
-
-    if (req.user.role !== 'admin' && req.user.role !== 'moderator') {
-      if (check.rows[0].user_id !== req.user.id) {
-        return res.status(403).json({ error: 'Bu ilanı silme yetkiniz bulunmamaktadır.' });
-      }
-    }
-
-    // Soft delete: status = 'deleted' (veri kaybı olmaz, audit için saklı kalır)
-    await pool.query(
-      `UPDATE listings SET status = 'deleted', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
-      [id]
-    );
-
-    res.json({ success: true, message: 'İlan başarıyla kaldırıldı.' });
-  } catch (error) {
-    res.status(500).json({ error: 'İlan silinirken hata oluştu.' });
-  }
-});
-
-// 5. KENDİ İLANLARIM
-app.get('/api/my-listings', authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT * FROM listings WHERE user_id = $1 AND status != 'deleted' ORDER BY created_at DESC`,
-      [req.user.id]
-    );
-    res.json({ listings: result.rows });
-  } catch (error) {
-    res.status(500).json({ error: 'İlanlarınız yüklenemedi.' });
-  }
-});
-
+// Sunucuyu Dinleme
 app.listen(PORT, () => {
-  console.log(`🚀 Sunucu http://localhost:${PORT} portunda yayında!`);
+  console.log(`🚀 Sunucu port ${PORT} üzerinde çalışıyor.`);
 });

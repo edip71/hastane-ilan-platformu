@@ -1,347 +1,264 @@
-import React, { useState } from 'react';
-import { LogOut, AlertTriangle, Plus, LayoutDashboard, FileText } from 'lucide-react';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
+import React from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Search, LogOut, Shield, User, PlusCircle } from 'lucide-react';
 
-export default function Navbar({ user, onLogout, token }) {
+export default function Navbar({ user, onLogout }) {
   const navigate = useNavigate();
-  const location = useLocation();
-  const isAdmin = user.role === 'admin' || user.role === 'moderator';
-
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
-
-  const handleConfirmLogout = () => {
-    setIsLoggingOut(true);
-    setTimeout(() => {
-      setIsLoggingOut(false);
-      setShowLogoutModal(false);
-      onLogout();
-    }, 700);
-  };
-
-  const isActive = (path) => location.pathname === path;
 
   return (
-    <>
-      <header style={styles.navbar}>
-        <div style={styles.container}>
-          {/* Sol: Logo ve Marka */}
-          <div
-            style={styles.brand}
-            onClick={() => navigate(isAdmin ? '/yonetim/kullanicilar' : '/')}
-          >
-            <svg width="34" height="34" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect width="48" height="48" rx="10" fill="#eff8ff" />
-              <path d="M24 10V38" stroke="#0077b6" strokeWidth="4.5" strokeLinecap="round" />
-              <path d="M10 24H38" stroke="#0077b6" strokeWidth="4.5" strokeLinecap="round" />
-              <path d="M24 18C28 14 34 14 36 16C38 18 38 24 34 28C30 32 24 30 24 30" stroke="#059669" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <div style={styles.brandText}>
-              <span style={styles.brandName}>Şifahane</span>
-              <span style={styles.brandSub}>Hastane İlan Platformu</span>
-            </div>
-          </div>
+    <header style={styles.header}>
+      <div style={styles.container}>
+        
+        {/* SOL: Orijinal Şifahane Logosu */}
+        <Link to="/" style={styles.logoLink}>
+          <img 
+            src="/logo.png" 
+            alt="Şifahane İlan Platformu" 
+            style={styles.logoImg} 
+          />
+        </Link>
 
-          {/* Orta: Navigasyon (Çalışan için) */}
-          {!isAdmin && (
-            <nav style={styles.navLinks}>
-              <Link
-                to="/"
-                style={isActive('/') ? { ...styles.navLink, ...styles.navLinkActive } : styles.navLink}
-              >
-                <FileText size={15} />
-                <span>İlanlar</span>
-              </Link>
-              <Link
-                to="/ilan/olustur"
-                style={isActive('/ilan/olustur') ? { ...styles.navLink, ...styles.navLinkActive } : styles.navLink}
-              >
-                <Plus size={15} />
-                <span>İlan Ver</span>
-              </Link>
-            </nav>
-          )}
-
-          {/* Admin için orta navigasyon */}
-          {isAdmin && (
-            <nav style={styles.navLinks}>
-              <Link
-                to="/yonetim/kullanicilar"
-                style={isActive('/yonetim/kullanicilar') ? { ...styles.navLink, ...styles.navLinkActive } : styles.navLink}
-              >
-                <LayoutDashboard size={15} />
-                <span>Yönetim Paneli</span>
-              </Link>
-            </nav>
-          )}
-
-          {/* Sağ: Kullanıcı Profili */}
-          <div style={styles.rightSection}>
-            <div style={styles.userCard}>
-              <div style={styles.avatar}>
-                {user.firstName?.[0]?.toLocaleUpperCase('tr-TR') ?? 'U'}
-                {user.lastName?.[0]?.toLocaleUpperCase('tr-TR') ?? ''}
-              </div>
-              <div style={styles.userInfo}>
-                <span style={styles.userName}>{user.firstName} {user.lastName}</span>
-                <span
-                  style={{
-                    ...styles.userRole,
-                    backgroundColor: isAdmin ? '#fef3c7' : '#e0f2fe',
-                    color: isAdmin ? '#92400e' : '#0369a1',
-                  }}
-                >
-                  {isAdmin ? 'Yönetici' : 'Çalışan'}
-                </span>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setShowLogoutModal(true)}
-              style={styles.logoutBtn}
-              title="Oturumu Kapat"
-            >
-              <LogOut size={16} />
-              <span style={styles.logoutText}>Çıkış</span>
+        {/* ORTA: Sahibinden Tarzı Gerçek Arama Kutusu */}
+        <div style={styles.searchContainer}>
+          <div style={styles.searchWrapper}>
+            <input 
+              type="text" 
+              placeholder="Kelime, ilan no veya ürün ara..." 
+              style={styles.searchInput}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  // Arama aksiyonu (Sonraki arama görevinde bağlanacak)
+                }
+              }}
+            />
+            <button style={styles.searchBtn} title="Ara">
+              <Search size={18} color="#ffffff" />
             </button>
           </div>
         </div>
-      </header>
 
-      {/* Çıkış Onay Modalı */}
-      {showLogoutModal && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modalContent}>
-            <div style={styles.modalHeader}>
-              <div style={styles.warningCircle}>
-                <AlertTriangle size={22} color="#dc2626" />
+        {/* SAĞ: Oturum Durumuna Göre Aksiyonlar */}
+        <div style={styles.navActions}>
+          {user ? (
+            // GİRİŞ YAPMIŞ KULLANICI
+            <div style={styles.userSection}>
+              {/* Admin ise Yönetim Paneli Butonu */}
+              {user.role === 'admin' && (
+                <Link to="/admin" style={styles.adminLink}>
+                  <Shield size={16} />
+                  <span>Yönetim</span>
+                </Link>
+              )}
+
+              {/* Kullanıcı Rozeti */}
+              <div style={styles.userInfo}>
+                <div style={styles.avatar}>
+                  {user.firstName ? user.firstName.charAt(0).toUpperCase() : 'U'}
+                </div>
+                <span style={styles.userName}>
+                  {user.firstName} {user.lastName}
+                </span>
               </div>
-              <div>
-                <h3 style={styles.modalTitle}>Oturumu Kapatmak İstiyor musunuz?</h3>
-                <p style={styles.modalSubtitle}>Mevcut oturumunuz güvenli bir şekilde sonlandırılacaktır.</p>
-              </div>
-            </div>
-            <div style={styles.modalActions}>
-              <button
-                disabled={isLoggingOut}
-                onClick={() => setShowLogoutModal(false)}
-                style={styles.btnCancel}
+
+              {/* Çıkış Yap Butonu */}
+              <button 
+                onClick={onLogout} 
+                style={styles.logoutBtn}
+                title="Güvenli Çıkış"
               >
-                Vazgeç
+                <LogOut size={16} />
+                <span>Çıkış Yap</span>
               </button>
-              <button
-                disabled={isLoggingOut}
-                onClick={handleConfirmLogout}
-                style={styles.btnConfirmLogout}
+
+              {/* İlan Ver Butonu (Sahibinden tarzı sarı/yeşil vurgu) */}
+              <button 
+                onClick={() => {
+                  alert('İlan verme ekranı Görev 07 kapsamında sırayla açılacaktır.');
+                }}
+                style={styles.postAdBtn}
               >
-                {isLoggingOut ? 'Çıkış Yapılıyor...' : 'Evet, Çıkış Yap'}
+                <PlusCircle size={16} />
+                <span>Ücretsiz İlan Ver</span>
               </button>
             </div>
-          </div>
+          ) : (
+            // GİRİŞ YAPMAMIŞ ZİYARETÇİ
+            <div style={styles.guestSection}>
+              <Link to="/giris" style={styles.loginBtn}>
+                <User size={16} />
+                <span>Giriş Yap</span>
+              </Link>
+              <Link to="/kayit" style={styles.registerBtn}>
+                <span>Kayıt Ol</span>
+              </Link>
+              <button 
+                onClick={() => navigate('/giris')} 
+                style={styles.postAdBtn}
+              >
+                <PlusCircle size={16} />
+                <span>Ücretsiz İlan Ver</span>
+              </button>
+            </div>
+          )}
         </div>
-      )}
-    </>
+
+      </div>
+    </header>
   );
 }
 
 const styles = {
-  navbar: {
+  header: {
     backgroundColor: '#ffffff',
     borderBottom: '1px solid #e2e8f0',
     position: 'sticky',
     top: 0,
     zIndex: 100,
-    boxShadow: '0 1px 4px rgba(15, 23, 42, 0.04)',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.03)',
   },
   container: {
-    maxWidth: '1280px',
+    maxWidth: '1240px',
     margin: '0 auto',
-    padding: '0 24px',
-    height: '62px',
+    padding: '10px 16px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: '16px',
-    boxSizing: 'border-box',
+    gap: '20px',
   },
-  brand: {
+  logoLink: {
     display: 'flex',
     alignItems: 'center',
-    gap: '10px',
-    cursor: 'pointer',
     flexShrink: 0,
   },
-  brandText: {
+  logoImg: {
+    height: '42px',
+    width: 'auto',
+    objectFit: 'contain',
+  },
+  searchContainer: {
+    flex: 1,
+    maxWidth: '560px',
+  },
+  searchWrapper: {
     display: 'flex',
-    flexDirection: 'column',
+    border: '2px solid #004f8c',
+    borderRadius: '6px',
+    overflow: 'hidden',
+    backgroundColor: '#ffffff',
   },
-  brandName: {
-    fontSize: '18px',
-    fontWeight: '800',
-    color: '#0369a1',
-    letterSpacing: '-0.3px',
-    lineHeight: '1.1',
+  searchInput: {
+    flex: 1,
+    border: 'none',
+    outline: 'none',
+    padding: '8px 14px',
+    fontSize: '14px',
+    color: '#1e293b',
   },
-  brandSub: {
-    fontSize: '10px',
-    color: '#94a3b8',
-    fontWeight: '400',
-    letterSpacing: '0.3px',
-  },
-  navLinks: {
+  searchBtn: {
+    backgroundColor: '#004f8c',
+    border: 'none',
+    padding: '0 16px',
+    cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
-    gap: '4px',
+    justifyContent: 'center',
   },
-  navLink: {
+  navActions: {
     display: 'flex',
     alignItems: 'center',
-    gap: '6px',
-    padding: '7px 14px',
-    borderRadius: '8px',
-    fontSize: '13.5px',
-    fontWeight: '500',
-    color: '#475569',
-    textDecoration: 'none',
-    transition: 'all 0.15s ease',
+    flexShrink: 0,
   },
-  navLinkActive: {
-    backgroundColor: '#eff8ff',
-    color: '#0284c7',
-    fontWeight: '600',
-  },
-  rightSection: {
+  userSection: {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
-    flexShrink: 0,
   },
-  userCard: {
+  guestSection: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+  adminLink: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '6px 12px',
+    backgroundColor: '#f1f5f9',
+    color: '#0f172a',
+    borderRadius: '4px',
+    fontSize: '13px',
+    fontWeight: '600',
+    border: '1px solid #cbd5e1',
+  },
+  userInfo: {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
   },
   avatar: {
-    width: '34px',
-    height: '34px',
+    width: '32px',
+    height: '32px',
     borderRadius: '50%',
-    backgroundColor: '#004f8c',
-    color: '#ffffff',
+    backgroundColor: '#e2e8f0',
+    color: '#004f8c',
+    fontWeight: '700',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '12px',
-    fontWeight: '700',
-    flexShrink: 0,
-    letterSpacing: '0.5px',
-  },
-  userInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
+    fontSize: '14px',
   },
   userName: {
     fontSize: '13px',
     fontWeight: '600',
-    color: '#0f172a',
-    lineHeight: '1.1',
-  },
-  userRole: {
-    fontSize: '10px',
-    fontWeight: '600',
-    padding: '1px 6px',
-    borderRadius: '4px',
-    display: 'inline-block',
-    letterSpacing: '0.3px',
+    color: '#334155',
   },
   logoutBtn: {
     display: 'flex',
     alignItems: 'center',
-    gap: '5px',
-    padding: '7px 14px',
+    gap: '6px',
+    padding: '6px 12px',
     backgroundColor: 'transparent',
-    border: '1px solid #e2e8f0',
-    borderRadius: '8px',
-    color: '#64748b',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: '500',
-    transition: 'all 0.15s ease',
-  },
-  logoutText: {
-    display: 'inline',
-  },
-  modalOverlay: {
-    position: 'fixed',
-    inset: 0,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    backdropFilter: 'blur(3px)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 200,
-    padding: '16px',
-  },
-  modalContent: {
-    backgroundColor: '#ffffff',
-    borderRadius: '14px',
-    padding: '24px',
-    width: '100%',
-    maxWidth: '380px',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.15)',
-    boxSizing: 'border-box',
-  },
-  modalHeader: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '14px',
-    marginBottom: '20px',
-  },
-  warningCircle: {
-    width: '42px',
-    height: '42px',
-    borderRadius: '10px',
-    backgroundColor: '#fee2e2',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  modalTitle: {
-    margin: '0 0 4px 0',
-    fontSize: '15px',
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  modalSubtitle: {
-    margin: 0,
-    fontSize: '12.5px',
-    color: '#64748b',
-    lineHeight: '1.4',
-  },
-  modalActions: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '10px',
-  },
-  btnCancel: {
-    padding: '9px 18px',
-    borderRadius: '8px',
-    border: '1px solid #e2e8f0',
-    backgroundColor: 'white',
-    color: '#475569',
-    fontSize: '13px',
-    fontWeight: '500',
-    cursor: 'pointer',
-  },
-  btnConfirmLogout: {
-    padding: '9px 18px',
-    borderRadius: '8px',
-    border: 'none',
-    backgroundColor: '#dc2626',
-    color: 'white',
+    color: '#dc2626',
+    border: '1px solid #fecaca',
+    borderRadius: '4px',
     fontSize: '13px',
     fontWeight: '600',
     cursor: 'pointer',
+    transition: 'background 0.2s',
+  },
+  loginBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '7px 14px',
+    backgroundColor: '#f8fafc',
+    color: '#004f8c',
+    borderRadius: '4px',
+    fontSize: '13px',
+    fontWeight: '600',
+    border: '1px solid #cbd5e1',
+  },
+  registerBtn: {
+    padding: '7px 14px',
+    backgroundColor: 'transparent',
+    color: '#475569',
+    borderRadius: '4px',
+    fontSize: '13px',
+    fontWeight: '600',
+    border: '1px solid #cbd5e1',
+  },
+  postAdBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '7px 14px',
+    backgroundColor: '#00a884',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '4px',
+    fontSize: '13px',
+    fontWeight: '700',
+    cursor: 'pointer',
+    boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
   },
 };

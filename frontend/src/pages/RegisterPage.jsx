@@ -1,24 +1,84 @@
 import React, { useState } from 'react';
-import { User, Mail, Lock, CheckCircle2, AlertCircle, Eye, EyeOff, ArrowRight } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import AuthNavbar from '../components/AuthNavbar';
+import { Link, useNavigate } from 'react-router-dom';
+import Navbar from '../components/Navbar';
+import { CheckCircle2, AlertCircle, Eye, EyeOff, Loader2 } from 'lucide-react';
 
-export default function RegisterPage() {
+export default function RegisterPage({ user, onLogout }) {
+  const navigate = useNavigate();
+
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
     email: '',
     password: '',
     confirmPassword: '',
-    termsAccepted: false,
+    kvkkApproved: false,
   });
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState({});
-  const [generalError, setGeneralError] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [formErrors, setFormErrors] = useState({});
+  const [apiError, setApiError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+
+  // İstemci Doğrulamaları (Client-side Validation)
+  const validateForm = () => {
+    const errors = {};
+
+    // 1. Ad Kontrolü
+    if (!formData.firstName.trim()) {
+      errors.firstName = 'Ad alanı zorunludur.';
+    } else if (formData.firstName.trim().length < 2) {
+      errors.firstName = 'Ad en az 2 karakter olmalıdır.';
+    }
+
+    // 2. Soyad Kontrolü
+    if (!formData.lastName.trim()) {
+      errors.lastName = 'Soyad alanı zorunludur.';
+    } else if (formData.lastName.trim().length < 2) {
+      errors.lastName = 'Soyad en az 2 karakter olmalıdır.';
+    }
+
+    // 3. E-posta Kontrolü
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!formData.email.trim()) {
+      errors.email = 'E-posta adresi zorunludur.';
+    } else if (!emailRegex.test(formData.email.trim())) {
+      errors.email = 'Geçerli bir e-posta formatı giriniz (Örn: isim@kurum.com).';
+    }
+
+    // 4. Şifre Gücü Kontrolü
+    if (!formData.password) {
+      errors.password = 'Şifre alanı zorunludur.';
+    } else {
+      const pass = formData.password;
+      const isLength = pass.length >= 8;
+      const hasUpper = /[A-ZÇĞİÖŞÜ]/.test(pass);
+      const hasLower = /[a-zçğıöşü]/.test(pass);
+      const hasNum = /[0-9]/.test(pass);
+      const hasSpecial = /[!@#$%^&*(),.?":{}|<>_\-+=[\]\\/]/.test(pass);
+
+      if (!isLength || !hasUpper || !hasLower || !hasNum || !hasSpecial) {
+        errors.password = 'Şifreniz en az 8 karakter olmalı; büyük harf, küçük harf, rakam ve özel karakter içermelidir.';
+      }
+    }
+
+    // 5. Şifre Tekrarı Eşleşmesi
+    if (!formData.confirmPassword) {
+      errors.confirmPassword = 'Şifre tekrarı zorunludur.';
+    } else if (formData.password !== formData.confirmPassword) {
+      errors.confirmPassword = 'Şifreler birbiriyle eşleşmiyor.';
+    }
+
+    // 6. KVKK Onayı
+    if (!formData.kvkkApproved) {
+      errors.kvkkApproved = 'Kayıt olabilmek için aydınlatma metnini onaylamanız zorunludur.';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -26,247 +86,256 @@ export default function RegisterPage() {
       ...prev,
       [name]: type === 'checkbox' ? checked : value,
     }));
-    if (fieldErrors[name]) setFieldErrors((prev) => ({ ...prev, [name]: '' }));
-    setGeneralError('');
+    // Alan değiştikçe o alana ait hatayı temizle
+    if (formErrors[name]) {
+      setFormErrors((prev) => ({ ...prev, [name]: undefined }));
+    }
+    setApiError('');
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setGeneralError('');
-    setSuccessMessage('');
-    const errors = {};
+    setApiError('');
 
-    if (!formData.firstName.trim()) errors.firstName = 'Ad alanı zorunludur.';
-    if (!formData.lastName.trim()) errors.lastName = 'Soyad alanı zorunludur.';
-    if (!formData.email.trim()) errors.email = 'Kurumsal e-posta alanı zorunludur.';
-    if (!formData.password) errors.password = 'Şifre alanı zorunludur.';
-    else if (formData.password.length < 6) errors.password = 'Şifre en az 6 karakter olmalıdır.';
-
-    if (formData.password !== formData.confirmPassword) {
-      errors.confirmPassword = 'Şifre tekrarı uyuşmuyor.';
-    }
-
-    if (!formData.termsAccepted) {
-      errors.termsAccepted = 'Kullanım koşullarını ve KVKK metnini onaylamalısınız.';
-    }
-
-    if (Object.keys(errors).length > 0) {
-      setFieldErrors(errors);
-      return;
-    }
+    if (!validateForm()) return;
 
     setLoading(true);
-
     try {
-      const response = await fetch('http://localhost:5000/api/auth/register', {
+      const res = await fetch('http://localhost:5000/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          firstName: formData.firstName.trim(),
+          lastName: formData.lastName.trim(),
+          email: formData.email.trim(),
+          password: formData.password,
+          confirmPassword: formData.confirmPassword,
+          kvkkApproved: formData.kvkkApproved,
+        }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        setGeneralError(data.error || 'Kayıt sırasında bir hata oluştu.');
+      const data = await res.json();
+      if (!res.ok) {
+        setApiError(data.error || 'Kayıt sırasında bir hata oluştu.');
       } else {
-        setSuccessMessage(data.message || 'Başvurunuz başarıyla alındı! Yönetici onayı bekleniyor.');
+        setSuccessMessage(data.message || 'Kayıt başvurunuz başarıyla alındı. Yönetici onayı bekleniyor.');
       }
     } catch (err) {
-      setGeneralError('Sunucuya bağlanılamadı. Lütfen sunucunun açık olduğundan emin olun.');
+      setApiError('Sunucuya bağlanılamadı. Lütfen sunucunun açık olduğundan emin olun.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={styles.pageWrapper}>
-      <AuthNavbar />
+    <div style={styles.page}>
+      <Navbar user={user} onLogout={onLogout} />
 
-      <main style={styles.mainArea}>
+      <main style={styles.main}>
         <div style={styles.card}>
+          
           <div style={styles.header}>
-            <h1 style={styles.title}>Birlikte daha iyiye.</h1>
+            <h1 style={styles.title}>Yeni Hesap Oluştur</h1>
             <p style={styles.subtitle}>
-              Kurumsal hesabınızı oluşturun, <span style={{ color: '#0369a1', fontWeight: '600' }}>Şifahane</span> ailesine katılın.
+              İlan vermek ve ilanları takip etmek için personel hesabınızı oluşturun.
             </p>
           </div>
 
-          {generalError && (
-            <div style={styles.errorAlert}>
-              <AlertCircle size={18} style={{ marginRight: 8, flexShrink: 0 }} />
-              <span>{generalError}</span>
-            </div>
-          )}
-
+          {/* Başarı Mesajı (Yönetici Onayı Bekleniyor) */}
           {successMessage ? (
             <div style={styles.successBox}>
-              <CheckCircle2 size={54} color="#16a34a" style={{ marginBottom: 12 }} />
-              <h3 style={{ color: '#16a34a', margin: '0 0 8px 0', fontSize: '20px', fontWeight: '700' }}>
-                Kayıt Başvurunuz Alındı
-              </h3>
-              <p style={{ color: '#334155', margin: '0 0 8px 0', fontSize: '14px', textAlign: 'center', lineHeight: '1.5' }}>
-                {successMessage}
-              </p>
-              <p style={{ color: '#64748b', fontSize: '13px', textAlign: 'center', margin: '0 0 20px 0' }}>
-                Hastane yönetimi (Başhekimlik) başvurunuzu onayladığında kurumsal e-postanız ve şifrenizle giriş yapabileceksiniz.
-              </p>
-              <Link to="/giris" style={styles.returnBtn}>
-                Giriş Ekranına Git
-              </Link>
+              <CheckCircle2 size={40} color="#16a34a" style={{ marginBottom: '12px' }} />
+              <h2 style={styles.successTitle}>Başvurunuz Alındı!</h2>
+              <p style={styles.successText}>{successMessage}</p>
+              <button 
+                onClick={() => navigate('/giris')} 
+                style={styles.btnPrimary}
+              >
+                Giriş Sayfasına Git
+              </button>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} style={styles.form}>
-              {/* Ad & Soyad - Yan Yana 2 Sütun */}
-              <div style={styles.twoColRow}>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Ad</label>
-                  <div style={styles.inputWrapper}>
-                    <User size={18} color="#94a3b8" style={styles.inputIcon} />
-                    <input
-                      type="text"
-                      name="firstName"
-                      value={formData.firstName}
-                      onChange={handleChange}
-                      placeholder="Adınız"
-                      className="auth-input"
-                      style={fieldErrors.firstName ? { ...styles.input, ...styles.inputError } : styles.input}
-                    />
-                  </div>
-                  {fieldErrors.firstName && <span style={styles.errorText}>{fieldErrors.firstName}</span>}
+            <form onSubmit={handleSubmit} noValidate>
+              
+              {/* Sunucu Hatası */}
+              {apiError && (
+                <div style={styles.errorAlert}>
+                  <AlertCircle size={18} />
+                  <span>{apiError}</span>
+                </div>
+              )}
+
+              {/* Ad & Soyad */}
+              <div style={styles.row}>
+                <div style={styles.col}>
+                  <label style={styles.label}>Adınız *</label>
+                  <input
+                    type="text"
+                    name="firstName"
+                    value={formData.firstName}
+                    onChange={handleChange}
+                    placeholder="Adınız"
+                    style={{
+                      ...styles.input,
+                      borderColor: formErrors.firstName ? '#dc2626' : '#cbd5e1',
+                    }}
+                  />
+                  {formErrors.firstName && (
+                    <span style={styles.fieldError}>{formErrors.firstName}</span>
+                  )}
                 </div>
 
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Soyad</label>
-                  <div style={styles.inputWrapper}>
-                    <User size={18} color="#94a3b8" style={styles.inputIcon} />
-                    <input
-                      type="text"
-                      name="lastName"
-                      value={formData.lastName}
-                      onChange={handleChange}
-                      placeholder="Soyadınız"
-                      className="auth-input"
-                      style={fieldErrors.lastName ? { ...styles.input, ...styles.inputError } : styles.input}
-                    />
-                  </div>
-                  {fieldErrors.lastName && <span style={styles.errorText}>{fieldErrors.lastName}</span>}
+                <div style={styles.col}>
+                  <label style={styles.label}>Soyadınız *</label>
+                  <input
+                    type="text"
+                    name="lastName"
+                    value={formData.lastName}
+                    onChange={handleChange}
+                    placeholder="Soyadınız"
+                    style={{
+                      ...styles.input,
+                      borderColor: formErrors.lastName ? '#dc2626' : '#cbd5e1',
+                    }}
+                  />
+                  {formErrors.lastName && (
+                    <span style={styles.fieldError}>{formErrors.lastName}</span>
+                  )}
                 </div>
               </div>
 
-              {/* Kurumsal E-posta */}
+              {/* E-posta */}
               <div style={styles.formGroup}>
-                <label style={styles.label}>Kurumsal E-posta</label>
-                <div style={styles.inputWrapper}>
-                  <Mail size={18} color="#94a3b8" style={styles.inputIcon} />
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    placeholder="ad.soyad@hastane.com"
-                    className="auth-input"
-                    style={fieldErrors.email ? { ...styles.input, ...styles.inputError } : styles.input}
-                  />
-                </div>
-                {fieldErrors.email && <span style={styles.errorText}>{fieldErrors.email}</span>}
+                <label style={styles.label}>Kurumsal E-posta Adresi *</label>
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  placeholder="ornek@hastane.gov.tr"
+                  style={{
+                    ...styles.input,
+                    borderColor: formErrors.email ? '#dc2626' : '#cbd5e1',
+                  }}
+                />
+                {formErrors.email && (
+                  <span style={styles.fieldError}>{formErrors.email}</span>
+                )}
               </div>
 
               {/* Şifre */}
               <div style={styles.formGroup}>
-                <label style={styles.label}>Şifre</label>
-                <div style={styles.inputWrapper}>
-                  <Lock size={18} color="#94a3b8" style={styles.inputIcon} />
+                <label style={styles.label}>Şifre *</label>
+                <div style={styles.passwordWrapper}>
                   <input
                     type={showPassword ? 'text' : 'password'}
                     name="password"
                     value={formData.password}
                     onChange={handleChange}
-                    placeholder="Şifrenizi oluşturun"
-                    className="auth-input"
-                    style={fieldErrors.password ? { ...styles.input, ...styles.inputError } : styles.input}
+                    placeholder="En az 8 karakter (Büyük, küçük harf, rakam, özel karakter)"
+                    style={{
+                      ...styles.input,
+                      borderColor: formErrors.password ? '#dc2626' : '#cbd5e1',
+                      paddingRight: '40px',
+                    }}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     style={styles.eyeBtn}
-                    aria-label="Şifreyi Göster/Gizle"
+                    tabIndex={-1}
                   >
                     {showPassword ? <EyeOff size={18} color="#64748b" /> : <Eye size={18} color="#64748b" />}
                   </button>
                 </div>
-                <span style={styles.hintText}>
-                  En az 6 karakter, bir büyük harf ve bir rakam kullanın.
-                </span>
-                {fieldErrors.password && <span style={styles.errorText}>{fieldErrors.password}</span>}
+                {formErrors.password && (
+                  <span style={styles.fieldError}>{formErrors.password}</span>
+                )}
               </div>
 
-              {/* Şifre Doğrulama */}
+              {/* Şifre Tekrar */}
               <div style={styles.formGroup}>
-                <label style={styles.label}>Şifre Doğrulama</label>
-                <div style={styles.inputWrapper}>
-                  <Lock size={18} color="#94a3b8" style={styles.inputIcon} />
+                <label style={styles.label}>Şifre Tekrarı *</label>
+                <div style={styles.passwordWrapper}>
                   <input
                     type={showConfirmPassword ? 'text' : 'password'}
                     name="confirmPassword"
                     value={formData.confirmPassword}
                     onChange={handleChange}
                     placeholder="Şifrenizi tekrar girin"
-                    className="auth-input"
-                    style={fieldErrors.confirmPassword ? { ...styles.input, ...styles.inputError } : styles.input}
+                    style={{
+                      ...styles.input,
+                      borderColor: formErrors.confirmPassword ? '#dc2626' : '#cbd5e1',
+                      paddingRight: '40px',
+                    }}
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                     style={styles.eyeBtn}
-                    aria-label="Şifreyi Göster/Gizle"
+                    tabIndex={-1}
                   >
                     {showConfirmPassword ? <EyeOff size={18} color="#64748b" /> : <Eye size={18} color="#64748b" />}
                   </button>
                 </div>
-                {fieldErrors.confirmPassword && (
-                  <span style={styles.errorText}>{fieldErrors.confirmPassword}</span>
+                {formErrors.confirmPassword && (
+                  <span style={styles.fieldError}>{formErrors.confirmPassword}</span>
                 )}
               </div>
 
-              {/* KVKK ve Şartlar Onay Kutusu */}
+              {/* KVKK Onay Kutusu */}
               <div style={styles.checkboxGroup}>
                 <input
                   type="checkbox"
-                  name="termsAccepted"
-                  id="termsAccepted"
-                  checked={formData.termsAccepted}
+                  id="kvkk"
+                  name="kvkkApproved"
+                  checked={formData.kvkkApproved}
                   onChange={handleChange}
                   style={styles.checkbox}
                 />
-                <label htmlFor="termsAccepted" style={styles.checkboxLabel}>
-                  <span style={styles.linkInline}>Kullanım Koşulları</span>'nı ve{' '}
-                  <span style={styles.linkInline}>KVKK Aydınlatma Metni</span>'ni okudum, kabul ediyorum. <span style={{ color: '#dc2626' }}>*</span>
+                <label htmlFor="kvkk" style={styles.checkboxLabel}>
+                  <span>
+                    Kullanıcı Sözleşmesi ve <strong>KVKK Aydınlatma Metni</strong>'ni okudum, kişisel verilerimin işlenmesini kabul ediyorum. *
+                  </span>
                 </label>
               </div>
-              {fieldErrors.termsAccepted && (
-                <span style={{ ...styles.errorText, marginTop: '-6px' }}>{fieldErrors.termsAccepted}</span>
+              {formErrors.kvkkApproved && (
+                <div style={{ ...styles.fieldError, marginTop: '-10px', marginBottom: '14px' }}>
+                  {formErrors.kvkkApproved}
+                </div>
               )}
 
-              {/* Kayıt Ol Butonu */}
+              {/* Kayıt Butonu */}
               <button
                 type="submit"
                 disabled={loading}
-                className="auth-button"
-                style={styles.submitBtn}
+                style={{
+                  ...styles.btnSubmit,
+                  opacity: loading ? 0.7 : 1,
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                }}
               >
-                <span>{loading ? 'Hesap Oluşturuluyor...' : 'Kayıt Ol'}</span>
-                {!loading && <ArrowRight size={18} />}
+                {loading ? (
+                  <>
+                    <Loader2 size={18} className="spin-animate" />
+                    <span>Kaydınız Yapılıyor...</span>
+                  </>
+                ) : (
+                  <span>Hesap Oluştur</span>
+                )}
               </button>
+
+              {/* Giriş Yap Yönlendirmesi */}
+              <div style={styles.footerLink}>
+                Zaten hesabınız var mı?{' '}
+                <Link to="/giris" style={styles.linkBold}>
+                  Giriş Yap
+                </Link>
+              </div>
+
             </form>
           )}
 
-          {/* Alt Bilgi */}
-          <div style={styles.footer}>
-            <span style={styles.footerText}>Zaten bir hesabınız var mı? </span>
-            <Link to="/giris" style={styles.loginLink}>
-              Giriş yap
-            </Link>
-          </div>
         </div>
       </main>
     </div>
@@ -274,192 +343,174 @@ export default function RegisterPage() {
 }
 
 const styles = {
-  pageWrapper: {
+  page: {
     minHeight: '100vh',
-    backgroundColor: '#edf4fa',
+    backgroundColor: '#f4f6f9',
     display: 'flex',
     flexDirection: 'column',
   },
-  mainArea: {
+  main: {
     flex: 1,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '36px 16px',
-    boxSizing: 'border-box',
+    padding: '30px 16px',
   },
   card: {
     backgroundColor: '#ffffff',
-    borderRadius: '16px',
-    boxShadow: '0 12px 32px -4px rgba(15, 23, 42, 0.06)',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    padding: '32px 28px',
     width: '100%',
     maxWidth: '520px',
-    padding: '36px 36px',
-    border: '1px solid #e2e8f0',
-    boxSizing: 'border-box',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
   },
   header: {
-    marginBottom: '26px',
-    textAlign: 'left',
+    marginBottom: '24px',
+    textAlign: 'center',
   },
   title: {
-    fontSize: '28px',
-    fontWeight: '800',
-    color: '#0a2540',
+    fontSize: '22px',
+    fontWeight: '700',
+    color: '#0f172a',
     margin: '0 0 6px 0',
-    letterSpacing: '-0.5px',
   },
   subtitle: {
-    fontSize: '14px',
-    color: '#627d98',
+    fontSize: '13px',
+    color: '#64748b',
     margin: 0,
-    lineHeight: '1.5',
   },
-  form: {
+  row: {
     display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
+    gap: '12px',
+    marginBottom: '16px',
   },
-  twoColRow: {
-    display: 'flex',
-    gap: '14px',
+  col: {
+    flex: 1,
   },
   formGroup: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
+    marginBottom: '16px',
   },
   label: {
+    display: 'block',
     fontSize: '13px',
     fontWeight: '600',
-    color: '#334e68',
+    color: '#334155',
+    marginBottom: '6px',
   },
-  inputWrapper: {
+  input: {
+    width: '100%',
+    padding: '10px 12px',
+    fontSize: '14px',
+    borderRadius: '6px',
+    border: '1px solid #cbd5e1',
+    outline: 'none',
+    boxSizing: 'border-box',
+    backgroundColor: '#ffffff',
+    color: '#1e293b',
+  },
+  passwordWrapper: {
     position: 'relative',
     display: 'flex',
     alignItems: 'center',
   },
-  inputIcon: {
-    position: 'absolute',
-    left: '12px',
-    pointerEvents: 'none',
-  },
-  input: {
-    width: '100%',
-    padding: '11px 14px 11px 38px',
-    borderRadius: '8px',
-    border: '1px solid #cbd5e1',
-    fontSize: '14px',
-    color: '#0f172a',
-    outline: 'none',
-    backgroundColor: '#ffffff',
-    transition: 'all 0.15s ease',
-    boxSizing: 'border-box',
-  },
-  inputError: {
-    borderColor: '#ef4444',
-    backgroundColor: '#fff5f5',
-  },
   eyeBtn: {
     position: 'absolute',
-    right: '12px',
+    right: '10px',
     background: 'none',
     border: 'none',
     cursor: 'pointer',
-    padding: 0,
+    padding: '4px',
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  hintText: {
-    fontSize: '11px',
-    color: '#829ab1',
-    marginTop: '2px',
-  },
-  errorText: {
+  fieldError: {
+    display: 'block',
     fontSize: '12px',
     color: '#dc2626',
+    marginTop: '4px',
     fontWeight: '500',
+  },
+  errorAlert: {
+    backgroundColor: '#fef2f2',
+    border: '1px solid #fecaca',
+    borderRadius: '6px',
+    padding: '12px 14px',
+    color: '#b91c1c',
+    fontSize: '13px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '18px',
   },
   checkboxGroup: {
     display: 'flex',
     alignItems: 'flex-start',
-    gap: '10px',
-    marginTop: '4px',
+    gap: '8px',
+    marginBottom: '16px',
+    cursor: 'pointer',
   },
   checkbox: {
     marginTop: '3px',
     cursor: 'pointer',
-    width: '16px',
-    height: '16px',
-    accentColor: '#0284c7',
   },
   checkboxLabel: {
-    fontSize: '12.5px',
-    color: '#486581',
-    lineHeight: '1.45',
+    fontSize: '12px',
+    color: '#475569',
+    lineHeight: '1.4',
     cursor: 'pointer',
   },
-  linkInline: {
-    color: '#0284c7',
-    fontWeight: '600',
-    textDecoration: 'underline',
-  },
-  submitBtn: {
+  btnSubmit: {
     width: '100%',
-    padding: '13px 20px',
     backgroundColor: '#004f8c',
     color: '#ffffff',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '6px',
+    padding: '12px',
     fontSize: '14px',
-    fontWeight: '600',
+    fontWeight: '700',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     gap: '8px',
-    marginTop: '6px',
-    transition: 'background-color 0.15s ease',
+    marginTop: '8px',
   },
-  footer: {
+  footerLink: {
     textAlign: 'center',
-    marginTop: '24px',
+    marginTop: '20px',
     fontSize: '13px',
+    color: '#64748b',
   },
-  footerText: {
-    color: '#627d98',
-  },
-  loginLink: {
-    color: '#0284c7',
+  linkBold: {
+    color: '#004f8c',
     fontWeight: '700',
-    textDecoration: 'none',
-  },
-  errorAlert: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '12px 14px',
-    borderRadius: '8px',
-    backgroundColor: '#fef2f2',
-    border: '1px solid #fecaca',
-    color: '#b91c1c',
-    fontSize: '13px',
-    marginBottom: '16px',
   },
   successBox: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
+    textAlign: 'center',
     padding: '20px 0',
   },
-  returnBtn: {
-    padding: '11px 24px',
+  successTitle: {
+    fontSize: '20px',
+    fontWeight: '700',
+    color: '#15803d',
+    marginBottom: '8px',
+  },
+  successText: {
+    fontSize: '14px',
+    color: '#475569',
+    marginBottom: '24px',
+    lineHeight: '1.5',
+  },
+  btnPrimary: {
+    padding: '10px 24px',
     backgroundColor: '#004f8c',
     color: '#ffffff',
-    borderRadius: '8px',
-    textDecoration: 'none',
+    border: 'none',
+    borderRadius: '6px',
     fontSize: '14px',
     fontWeight: '600',
-    transition: 'background-color 0.15s',
+    cursor: 'pointer',
   },
 };

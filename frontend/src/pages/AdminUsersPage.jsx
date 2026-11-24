@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Check, X, PauseCircle, PlayCircle, History, AlertCircle, CheckCircle2 } from 'lucide-react';
-import Navbar from '../components/Navbar';
+import { useNavigate } from 'react-router-dom';
+import { 
+  Search, Check, X, PauseCircle, PlayCircle, History, 
+  AlertCircle, CheckCircle2, ArrowLeft, LogOut, Shield 
+} from 'lucide-react';
 
 export default function AdminUsersPage({ user, token, onLogout }) {
+  const navigate = useNavigate();
+
   const [usersList, setUsersList] = useState([]);
   const [filterStatus, setFilterStatus] = useState('pending');
   const [searchQuery, setSearchQuery] = useState('');
@@ -10,11 +15,18 @@ export default function AdminUsersPage({ user, token, onLogout }) {
   const [actionError, setActionError] = useState('');
   const [actionSuccess, setActionSuccess] = useState('');
 
-  // Modal Durumları
+  // Modallar
   const [selectedUser, setSelectedUser] = useState(null);
   const [modalType, setModalType] = useState(null); // 'REJECT', 'SUSPEND', 'LOGS'
   const [rejectReason, setRejectReason] = useState('');
   const [userLogs, setUserLogs] = useState([]);
+
+  // Güvenlik & Yetki Kontrolü: Admin değilse ana sayfaya yönlendir
+  useEffect(() => {
+    if (!user || user.role !== 'admin') {
+      navigate('/giris');
+    }
+  }, [user, navigate]);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -91,24 +103,47 @@ export default function AdminUsersPage({ user, token, onLogout }) {
   };
 
   return (
-    <div style={styles.pageContainer}>
-      <Navbar user={user} onLogout={onLogout} />
+    <div style={styles.page}>
+      
+      {/* Özel Admin Header (Kullanıcının isteği: Admin paneli hariç navbar her yerde olacak, admin paneli özel bir alan) */}
+      <header style={styles.adminNav}>
+        <div style={styles.adminNavContainer}>
+          <div style={styles.adminNavLeft}>
+            <img src="/logo.png" alt="Şifahane" style={{ height: '36px' }} />
+            <div style={styles.adminBadge}>
+              <Shield size={14} />
+              <span>Yönetim Paneli</span>
+            </div>
+          </div>
+          <div style={styles.adminNavRight}>
+            <button onClick={() => navigate('/')} style={styles.btnSiteReturn}>
+              <ArrowLeft size={16} />
+              <span>Siteye Dön</span>
+            </button>
+            <button onClick={onLogout} style={styles.btnLogout}>
+              <LogOut size={16} />
+              <span>Çıkış Yap</span>
+            </button>
+          </div>
+        </div>
+      </header>
 
-      <main style={styles.mainContent}>
-        <div style={styles.adminSection} className="page-enter">
-          <div style={styles.adminHeader}>
+      {/* Ana İçerik */}
+      <main style={styles.main}>
+        <div style={styles.container}>
+          
+          <div style={styles.pageHeader}>
             <div>
-              <h2 style={{ margin: '0 0 6px 0', color: '#fff', fontSize: '22px', fontWeight: '800', letterSpacing: '-0.01em' }}>
-                Kullanıcı Yönetimi
-              </h2>
-              <p style={{ margin: 0, color: 'rgba(255,255,255,0.8)', fontSize: '14px' }}>
-                Hastane personeli kayıt başvurularını inceleyin, onaylayın veya hesapları yönetin.
+              <h1 style={styles.pageTitle}>Kullanıcı Yönetimi ve Onay Kuyruğu</h1>
+              <p style={styles.pageSubtitle}>
+                Kayıt başvurularını inceleyin, hesapları onaylayın, reddedin veya askıya alın.
               </p>
             </div>
 
-            <div style={styles.filterBar}>
+            {/* Arama ve Filtre Butonları */}
+            <div style={styles.filterSection}>
               <div style={styles.searchBox}>
-                <Search size={16} color="#94a3b8" />
+                <Search size={16} color="#64748b" />
                 <input
                   type="text"
                   placeholder="Ad, soyad veya e-posta ara..."
@@ -117,12 +152,10 @@ export default function AdminUsersPage({ user, token, onLogout }) {
                   onKeyDown={(e) => e.key === 'Enter' && fetchUsers()}
                   style={styles.searchInput}
                 />
-                <button onClick={fetchUsers} style={styles.searchBtn}>
-                  Ara
-                </button>
+                <button onClick={fetchUsers} style={styles.searchBtn}>Ara</button>
               </div>
 
-              <div style={styles.statusTabs}>
+              <div style={styles.tabs}>
                 <button
                   onClick={() => setFilterStatus('pending')}
                   style={filterStatus === 'pending' ? styles.tabActive : styles.tab}
@@ -151,35 +184,33 @@ export default function AdminUsersPage({ user, token, onLogout }) {
             </div>
           </div>
 
+          {/* Bildirimler */}
           {actionSuccess && (
             <div style={styles.successAlert}>
-              <CheckCircle2 size={18} style={{ marginRight: 8 }} />
+              <CheckCircle2 size={18} />
               <span>{actionSuccess}</span>
             </div>
           )}
 
           {actionError && (
             <div style={styles.errorAlert}>
-              <AlertCircle size={18} style={{ marginRight: 8 }} />
+              <AlertCircle size={18} />
               <span>{actionError}</span>
             </div>
           )}
 
+          {/* Kullanıcı Listesi Tablosu */}
           <div style={styles.tableCard}>
-            <div className="responsive-table-wrapper">
-              {loading ? (
-                <div style={{ padding: '32px', textAlign: 'center', color: '#64748b' }}>
-                  Yükleniyor...
-                </div>
-              ) : usersList.length === 0 ? (
-                <div style={{ padding: '32px', textAlign: 'center', color: '#64748b' }}>
-                  Bu filtreye uygun kullanıcı kaydı bulunamadı.
-                </div>
-              ) : (
+            {loading ? (
+              <div style={styles.emptyState}>Yükleniyor...</div>
+            ) : usersList.length === 0 ? (
+              <div style={styles.emptyState}>Bu filtreye uygun kullanıcı kaydı bulunamadı.</div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
                 <table style={styles.table}>
                   <thead>
-                    <tr style={styles.tableHeaderRow}>
-                      <th style={styles.th}>Personel Bilgisi</th>
+                    <tr style={styles.thRow}>
+                      <th style={styles.th}>Personel</th>
                       <th style={styles.th}>Rol</th>
                       <th style={styles.th}>Durum</th>
                       <th style={styles.th}>Kayıt Tarihi</th>
@@ -188,9 +219,9 @@ export default function AdminUsersPage({ user, token, onLogout }) {
                   </thead>
                   <tbody>
                     {usersList.map((item) => (
-                      <tr key={item.id} style={styles.tableRow}>
+                      <tr key={item.id} style={styles.tr}>
                         <td style={styles.td}>
-                          <div style={{ fontWeight: '600', color: '#1e293b' }}>
+                          <div style={{ fontWeight: '600', color: '#0f172a' }}>
                             {item.first_name} {item.last_name}
                           </div>
                           <div style={{ fontSize: '12px', color: '#64748b' }}>{item.email}</div>
@@ -234,7 +265,8 @@ export default function AdminUsersPage({ user, token, onLogout }) {
                           </span>
                         </td>
                         <td style={{ ...styles.td, textAlign: 'right' }}>
-                          <div style={styles.actionButtonGroup}>
+                          <div style={styles.actionsGroup}>
+                            {/* Onay Bekleyen İşlemleri */}
                             {item.status === 'pending' && (
                               <>
                                 <button
@@ -242,8 +274,8 @@ export default function AdminUsersPage({ user, token, onLogout }) {
                                   style={styles.btnApprove}
                                   title="Hesabı Onayla"
                                 >
-                                  <Check size={14} style={{ marginRight: 4 }} />
-                                  Onayla
+                                  <Check size={14} />
+                                  <span>Onayla</span>
                                 </button>
                                 <button
                                   onClick={() => {
@@ -253,12 +285,13 @@ export default function AdminUsersPage({ user, token, onLogout }) {
                                   style={styles.btnReject}
                                   title="Gerekçeyle Reddet"
                                 >
-                                  <X size={14} style={{ marginRight: 4 }} />
-                                  Reddet
+                                  <X size={14} />
+                                  <span>Reddet</span>
                                 </button>
                               </>
                             )}
 
+                            {/* Aktif Hesap İşlemleri */}
                             {item.status === 'active' && item.id !== user.id && (
                               <button
                                 onClick={() => {
@@ -268,25 +301,27 @@ export default function AdminUsersPage({ user, token, onLogout }) {
                                 style={styles.btnSuspend}
                                 title="Hesabı Askıya Al"
                               >
-                                <PauseCircle size={14} style={{ marginRight: 4 }} />
-                                Askıya Al
+                                <PauseCircle size={14} />
+                                <span>Askıya Al</span>
                               </button>
                             )}
 
+                            {/* Askıdaki Hesap İşlemleri */}
                             {item.status === 'suspended' && (
                               <button
                                 onClick={() => handleStatusAction(item.id, 'ACTIVATE')}
                                 style={styles.btnActivate}
                                 title="Tekrar Etkinleştir"
                               >
-                                <PlayCircle size={14} style={{ marginRight: 4 }} />
-                                Etkinleştir
+                                <PlayCircle size={14} />
+                                <span>Etkinleştir</span>
                               </button>
                             )}
 
+                            {/* Denetim Kayıtları */}
                             <button
                               onClick={() => handleViewLogs(item)}
-                              style={styles.btnHistory}
+                              style={styles.btnLogs}
                               title="İşlem Geçmişi"
                             >
                               <History size={14} />
@@ -297,35 +332,34 @@ export default function AdminUsersPage({ user, token, onLogout }) {
                     ))}
                   </tbody>
                 </table>
-              )}
-            </div>
+              </div>
+            )}
           </div>
+
         </div>
       </main>
 
-      {/* MODALLAR */}
+      {/* Ret Modal */}
       {modalType === 'REJECT' && selectedUser && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalContent}>
-            <h3 style={{ margin: '0 0 12px 0', color: '#991b1b' }}>Başvuruyu Reddet</h3>
-            <p style={{ fontSize: '13px', color: '#475569', marginBottom: '16px' }}>
-              <strong>{selectedUser.first_name} {selectedUser.last_name}</strong> isimli personelin başvurusunu reddetmek üzeresiniz. Lütfen geçerli bir ret gerekçesi belirtin.
+            <h3 style={{ margin: '0 0 8px 0', color: '#991b1b', fontSize: '18px' }}>Başvuruyu Reddet</h3>
+            <p style={{ fontSize: '13px', color: '#475569', marginBottom: '14px' }}>
+              <strong>{selectedUser.first_name} {selectedUser.last_name}</strong> isimli personelin başvurusunu reddetmek üzeresiniz. Lütfen bir gerekçe belirtin.
             </p>
             <textarea
               rows={3}
-              placeholder="Ör: Kurum personeli olduğu doğrulanamadı."
+              placeholder="Örn: Kurum personeli olduğu doğrulanamadı."
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
               style={styles.textarea}
             />
             <div style={styles.modalActions}>
-              <button onClick={closeModal} style={styles.btnCancel}>
-                Vazgeç
-              </button>
+              <button onClick={closeModal} style={styles.btnModalCancel}>Vazgeç</button>
               <button
                 onClick={() => handleStatusAction(selectedUser.id, 'REJECT', rejectReason)}
                 disabled={rejectReason.trim().length < 5}
-                style={styles.btnConfirmDanger}
+                style={styles.btnModalDanger}
               >
                 Gerekçeyle Reddet
               </button>
@@ -334,20 +368,19 @@ export default function AdminUsersPage({ user, token, onLogout }) {
         </div>
       )}
 
+      {/* Askıya Al Modal */}
       {modalType === 'SUSPEND' && selectedUser && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalContent}>
-            <h3 style={{ margin: '0 0 12px 0', color: '#b45309' }}>Hesabı Askıya Al</h3>
+            <h3 style={{ margin: '0 0 8px 0', color: '#b45309', fontSize: '18px' }}>Hesabı Askıya Al</h3>
             <p style={{ fontSize: '13px', color: '#475569', marginBottom: '16px' }}>
-              <strong>{selectedUser.first_name} {selectedUser.last_name}</strong> isimli personelin hesabı dondurulacak. Personel açık oturumu varsa sistemden düşecektir.
+              <strong>{selectedUser.first_name} {selectedUser.last_name}</strong> isimli personelin hesabı dondurulacak ve oturumu sonlandırılacaktır.
             </p>
             <div style={styles.modalActions}>
-              <button onClick={closeModal} style={styles.btnCancel}>
-                Vazgeç
-              </button>
+              <button onClick={closeModal} style={styles.btnModalCancel}>Vazgeç</button>
               <button
                 onClick={() => handleStatusAction(selectedUser.id, 'SUSPEND')}
-                style={styles.btnConfirmWarning}
+                style={styles.btnModalWarning}
               >
                 Hesabı Askıya Al
               </button>
@@ -356,34 +389,38 @@ export default function AdminUsersPage({ user, token, onLogout }) {
         </div>
       )}
 
+      {/* Denetim Logları Modal */}
       {modalType === 'LOGS' && selectedUser && (
         <div style={styles.modalOverlay}>
-          <div style={{ ...styles.modalContent, maxWidth: '540px' }}>
-            <h3 style={{ margin: '0 0 12px 0', color: '#0f172a' }}>
+          <div style={{ ...styles.modalContent, maxWidth: '500px' }}>
+            <h3 style={{ margin: '0 0 12px 0', color: '#0f172a', fontSize: '16px' }}>
               İşlem Geçmişi: {selectedUser.first_name} {selectedUser.last_name}
             </h3>
             {userLogs.length === 0 ? (
-              <p style={{ fontSize: '13px', color: '#64748b' }}>Bu hesap üzerinde henüz bir yönetim işlemi yapılmamış.</p>
+              <p style={{ fontSize: '13px', color: '#64748b' }}>Bu hesap üzerinde henüz bir işlem yapılmamış.</p>
             ) : (
-              <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+              <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
                 {userLogs.map((log) => (
-                  <div key={log.id} style={styles.logItem}>
+                  <div key={log.id} style={styles.logCard}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <span style={{ fontWeight: '600', fontSize: '13px', color: '#1e293b' }}>
-                        {log.action === 'APPROVE' && '✅ Onaylandı'}
-                        {log.action === 'REJECT' && '❌ Reddedildi'}
-                        {log.action === 'SUSPEND' && '⏸️ Askıya Alındı'}
-                        {log.action === 'ACTIVATE' && '▶️ Etkinleştirildi'}
+                      <span style={{ fontWeight: '600', fontSize: '12px', color: '#0f172a' }}>
+                        {log.action === 'APPROVE_USER' && '✅ Onaylandı'}
+                        {log.action === 'REJECT_USER' && '❌ Reddedildi'}
+                        {log.action === 'SUSPEND_USER' && '⏸️ Askıya Alındı'}
+                        {log.action === 'ACTIVATE_USER' && '▶️ Etkinleştirildi'}
+                        {log.action === 'REGISTER_APPLICATION' && '📝 Kayıt Başvurusu'}
                       </span>
                       <span style={{ fontSize: '11px', color: '#94a3b8' }}>
                         {new Date(log.created_at).toLocaleString('tr-TR')}
                       </span>
                     </div>
-                    <div style={{ fontSize: '12px', color: '#64748b' }}>
-                      İşlemi Yapan: {log.performed_by_first_name} {log.performed_by_last_name}
-                    </div>
+                    {log.performed_by_first_name && (
+                      <div style={{ fontSize: '11px', color: '#64748b' }}>
+                        İşlemi Yapan: {log.performed_by_first_name} {log.performed_by_last_name}
+                      </div>
+                    )}
                     {log.reason && (
-                      <div style={{ fontSize: '12px', color: '#b91c1c', marginTop: '4px', fontStyle: 'italic' }}>
+                      <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>
                         Gerekçe: "{log.reason}"
                       </div>
                     )}
@@ -392,160 +429,216 @@ export default function AdminUsersPage({ user, token, onLogout }) {
               </div>
             )}
             <div style={{ ...styles.modalActions, marginTop: '16px' }}>
-              <button onClick={closeModal} style={styles.btnCancel}>
-                Kapat
-              </button>
+              <button onClick={closeModal} style={styles.btnModalCancel}>Kapat</button>
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }
 
 const styles = {
-  pageContainer: {
+  page: {
     minHeight: '100vh',
-    background: 'linear-gradient(160deg, #edf4fa 0%, #f4f8fd 60%, #e8f0f9 100%)',
+    backgroundColor: '#f8fafc',
     display: 'flex',
     flexDirection: 'column',
   },
-  mainContent: {
-    flex: 1,
-    padding: '32px 20px 64px',
-    maxWidth: '1200px',
+  adminNav: {
+    backgroundColor: '#002b4d',
+    borderBottom: '1px solid #001f38',
+    padding: '12px 16px',
+    color: '#ffffff',
+  },
+  adminNavContainer: {
+    maxWidth: '1240px',
     margin: '0 auto',
-    width: '100%',
-    boxSizing: 'border-box',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  adminSection: {
+  adminNavLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+  },
+  adminBadge: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    padding: '4px 10px',
+    borderRadius: '4px',
+    fontSize: '12px',
+    fontWeight: '600',
+    color: '#e2e8f0',
+  },
+  adminNavRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+  btnSiteReturn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '6px 12px',
+    backgroundColor: 'transparent',
+    color: '#ffffff',
+    border: '1px solid rgba(255,255,255,0.3)',
+    borderRadius: '4px',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+  },
+  btnLogout: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '6px 12px',
+    backgroundColor: '#dc2626',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '4px',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+  },
+  main: {
+    flex: 1,
+    padding: '24px 16px',
+  },
+  container: {
+    maxWidth: '1240px',
+    margin: '0 auto',
+  },
+  pageHeader: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '20px',
+    gap: '16px',
+    marginBottom: '20px',
   },
-  adminHeader: {
-    background: 'linear-gradient(135deg, #004f8c 0%, #0369a1 100%)',
-    borderRadius: '20px',
-    padding: '28px 32px',
-    color: '#fff',
-    boxShadow: '0 8px 32px rgba(3,105,161,0.25)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px',
+  pageTitle: {
+    fontSize: '20px',
+    fontWeight: '700',
+    color: '#0f172a',
+    margin: '0 0 4px 0',
   },
-  filterBar: {
+  pageSubtitle: {
+    fontSize: '13px',
+    color: '#64748b',
+    margin: 0,
+  },
+  filterSection: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: '16px',
+    gap: '12px',
     flexWrap: 'wrap',
   },
   searchBox: {
     display: 'flex',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    border: '1.5px solid rgba(255,255,255,0.3)',
-    borderRadius: '12px',
-    padding: '4px 10px',
-    flex: '1',
-    minWidth: '260px',
-    backdropFilter: 'blur(8px)',
+    backgroundColor: '#ffffff',
+    border: '1px solid #cbd5e1',
+    borderRadius: '6px',
+    padding: '2px 8px',
+    flex: 1,
+    minWidth: '240px',
   },
   searchInput: {
     border: 'none',
     outline: 'none',
-    padding: '8px 8px',
+    padding: '8px',
     fontSize: '13px',
     width: '100%',
-    background: 'transparent',
-    color: '#fff',
   },
   searchBtn: {
-    backgroundColor: '#fff',
-    color: '#004f8c',
+    backgroundColor: '#004f8c',
+    color: '#fff',
     border: 'none',
-    borderRadius: '8px',
-    padding: '7px 16px',
-    fontSize: '12px',
-    cursor: 'pointer',
-    fontWeight: '700',
-  },
-  statusTabs: {
-    display: 'flex',
-    gap: '6px',
-    backgroundColor: 'rgba(0,0,0,0.15)',
-    padding: '4px',
-    borderRadius: '12px',
-    flexWrap: 'wrap',
-  },
-  tab: {
-    backgroundColor: 'transparent',
-    border: 'none',
-    padding: '7px 16px',
-    borderRadius: '8px',
+    borderRadius: '4px',
+    padding: '6px 12px',
     fontSize: '12px',
     fontWeight: '600',
-    color: 'rgba(255,255,255,0.75)',
     cursor: 'pointer',
   },
-  tabActive: {
-    backgroundColor: '#ffffff',
+  tabs: {
+    display: 'flex',
+    gap: '4px',
+    backgroundColor: '#e2e8f0',
+    padding: '3px',
+    borderRadius: '6px',
+  },
+  tab: {
     border: 'none',
-    padding: '7px 16px',
-    borderRadius: '8px',
+    backgroundColor: 'transparent',
+    padding: '6px 12px',
+    fontSize: '12px',
+    fontWeight: '600',
+    color: '#475569',
+    cursor: 'pointer',
+    borderRadius: '4px',
+  },
+  tabActive: {
+    border: 'none',
+    backgroundColor: '#ffffff',
+    padding: '6px 12px',
     fontSize: '12px',
     fontWeight: '700',
     color: '#004f8c',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
     cursor: 'pointer',
+    borderRadius: '4px',
+    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
   },
   tableCard: {
     backgroundColor: '#ffffff',
     border: '1px solid #e2e8f0',
-    borderRadius: '20px',
+    borderRadius: '6px',
     overflow: 'hidden',
-    boxShadow: '0 4px 24px rgba(3,105,161,0.08)',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
   },
   table: {
     width: '100%',
     borderCollapse: 'collapse',
     textAlign: 'left',
   },
-  tableHeaderRow: {
+  thRow: {
     backgroundColor: '#f8fafc',
     borderBottom: '1px solid #e2e8f0',
   },
   th: {
-    padding: '14px 18px',
-    fontSize: '11px',
+    padding: '12px 16px',
+    fontSize: '12px',
     fontWeight: '700',
-    color: '#94a3b8',
+    color: '#475569',
     textTransform: 'uppercase',
-    letterSpacing: '0.06em',
   },
-  tableRow: {
+  tr: {
     borderBottom: '1px solid #f1f5f9',
   },
   td: {
-    padding: '14px 18px',
+    padding: '12px 16px',
     fontSize: '13px',
     color: '#334155',
   },
   roleBadge: {
     fontSize: '11px',
-    fontWeight: '700',
-    padding: '4px 10px',
-    borderRadius: '20px',
-    backgroundColor: '#dbeafe',
-    color: '#0369a1',
+    fontWeight: '600',
+    padding: '3px 8px',
+    borderRadius: '4px',
+    backgroundColor: '#f1f5f9',
+    color: '#475569',
   },
   statusBadge: {
     fontSize: '11px',
     fontWeight: '700',
-    padding: '4px 10px',
-    borderRadius: '20px',
+    padding: '3px 8px',
+    borderRadius: '4px',
   },
-  actionButtonGroup: {
+  actionsGroup: {
     display: 'flex',
     justifyContent: 'flex-end',
     gap: '6px',
@@ -553,83 +646,95 @@ const styles = {
   btnApprove: {
     display: 'flex',
     alignItems: 'center',
+    gap: '4px',
     backgroundColor: '#16a34a',
     color: '#fff',
     border: 'none',
-    padding: '6px 12px',
-    borderRadius: '8px',
+    padding: '5px 10px',
+    borderRadius: '4px',
     fontSize: '11px',
-    fontWeight: '700',
+    fontWeight: '600',
     cursor: 'pointer',
   },
   btnReject: {
     display: 'flex',
     alignItems: 'center',
+    gap: '4px',
     backgroundColor: '#dc2626',
     color: '#fff',
     border: 'none',
-    padding: '6px 12px',
-    borderRadius: '8px',
+    padding: '5px 10px',
+    borderRadius: '4px',
     fontSize: '11px',
-    fontWeight: '700',
+    fontWeight: '600',
     cursor: 'pointer',
   },
   btnSuspend: {
     display: 'flex',
     alignItems: 'center',
+    gap: '4px',
     backgroundColor: '#d97706',
     color: '#fff',
     border: 'none',
-    padding: '6px 12px',
-    borderRadius: '8px',
+    padding: '5px 10px',
+    borderRadius: '4px',
     fontSize: '11px',
-    fontWeight: '700',
+    fontWeight: '600',
     cursor: 'pointer',
   },
   btnActivate: {
     display: 'flex',
     alignItems: 'center',
+    gap: '4px',
     backgroundColor: '#0284c7',
     color: '#fff',
     border: 'none',
-    padding: '6px 12px',
-    borderRadius: '8px',
+    padding: '5px 10px',
+    borderRadius: '4px',
     fontSize: '11px',
-    fontWeight: '700',
+    fontWeight: '600',
     cursor: 'pointer',
   },
-  btnHistory: {
+  btnLogs: {
     display: 'flex',
     alignItems: 'center',
     backgroundColor: '#f1f5f9',
     color: '#475569',
-    border: '1px solid #e2e8f0',
-    padding: '6px 10px',
-    borderRadius: '8px',
+    border: '1px solid #cbd5e1',
+    padding: '5px 8px',
+    borderRadius: '4px',
     fontSize: '11px',
     cursor: 'pointer',
   },
-  errorAlert: {
-    backgroundColor: '#fef2f2',
-    color: '#b91c1c',
-    border: '1px solid #fecaca',
-    borderRadius: '12px',
-    padding: '14px 18px',
-    fontSize: '13px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
   successAlert: {
     backgroundColor: '#f0fdf4',
-    color: '#166534',
     border: '1px solid #bbf7d0',
-    borderRadius: '12px',
-    padding: '14px 18px',
+    color: '#166534',
+    padding: '12px 14px',
+    borderRadius: '6px',
     fontSize: '13px',
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
+    marginBottom: '16px',
+  },
+  errorAlert: {
+    backgroundColor: '#fef2f2',
+    border: '1px solid #fecaca',
+    color: '#b91c1c',
+    padding: '12px 14px',
+    borderRadius: '6px',
+    fontSize: '13px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '16px',
+  },
+  emptyState: {
+    padding: '36px',
+    textAlign: 'center',
+    color: '#64748b',
+    fontSize: '13px',
   },
   modalOverlay: {
     position: 'fixed',
@@ -637,74 +742,72 @@ const styles = {
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(10,37,64,0.55)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 9999,
+    zIndex: 1000,
     padding: '16px',
-    backdropFilter: 'blur(4px)',
   },
   modalContent: {
     backgroundColor: '#ffffff',
-    borderRadius: '20px',
-    padding: '32px 32px',
+    borderRadius: '8px',
+    padding: '24px',
     width: '100%',
     maxWidth: '440px',
-    boxShadow: '0 20px 60px rgba(10,37,64,0.25)',
+    boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
   },
   textarea: {
     width: '100%',
-    borderRadius: '10px',
-    border: '1.5px solid #e2e8f0',
-    padding: '10px 14px',
+    borderRadius: '6px',
+    border: '1px solid #cbd5e1',
+    padding: '8px 10px',
     fontSize: '13px',
     outline: 'none',
     boxSizing: 'border-box',
     fontFamily: 'inherit',
     marginBottom: '16px',
-    background: '#f8fafc',
   },
   modalActions: {
     display: 'flex',
     justifyContent: 'flex-end',
-    gap: '10px',
+    gap: '8px',
   },
-  btnCancel: {
+  btnModalCancel: {
     backgroundColor: '#f1f5f9',
-    border: '1.5px solid #e2e8f0',
-    padding: '10px 18px',
-    borderRadius: '10px',
+    border: '1px solid #cbd5e1',
+    padding: '8px 14px',
+    borderRadius: '4px',
     fontSize: '13px',
     fontWeight: '600',
     color: '#475569',
     cursor: 'pointer',
   },
-  btnConfirmDanger: {
+  btnModalDanger: {
     backgroundColor: '#dc2626',
     border: 'none',
-    padding: '10px 18px',
-    borderRadius: '10px',
+    padding: '8px 14px',
+    borderRadius: '4px',
     fontSize: '13px',
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#ffffff',
     cursor: 'pointer',
   },
-  btnConfirmWarning: {
+  btnModalWarning: {
     backgroundColor: '#d97706',
     border: 'none',
-    padding: '10px 18px',
-    borderRadius: '10px',
+    padding: '8px 14px',
+    borderRadius: '4px',
     fontSize: '13px',
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#ffffff',
     cursor: 'pointer',
   },
-  logItem: {
+  logCard: {
     backgroundColor: '#f8fafc',
     border: '1px solid #e2e8f0',
-    borderRadius: '10px',
-    padding: '12px 14px',
+    borderRadius: '4px',
+    padding: '8px 12px',
     marginBottom: '8px',
   },
 };

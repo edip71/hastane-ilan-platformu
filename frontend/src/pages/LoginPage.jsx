@@ -1,124 +1,123 @@
 import React, { useState } from 'react';
-import { Mail, Lock, AlertCircle, Clock, Eye, EyeOff, ArrowRight } from 'lucide-react';
-import { useNavigate, Link } from 'react-router-dom';
-import AuthNavbar from '../components/AuthNavbar';
+import { Link, useNavigate } from 'react-router-dom';
+import Navbar from '../components/Navbar';
+import { AlertCircle, Eye, EyeOff, Loader2 } from 'lucide-react';
 
-export default function LoginPage({ onLoginSuccess }) {
+export default function LoginPage({ onLoginSuccess, user, onLogout }) {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+  });
+
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
-  const [errorCode, setErrorCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+    setError('');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setErrorCode('');
 
-    if (!email.trim() || !password) {
-      setError('Lütfen e-posta ve şifrenizi giriniz.');
+    if (!formData.email.trim() || !formData.password) {
+      setError('Lütfen e-posta adresinizi ve şifrenizi giriniz.');
       return;
     }
 
     setLoading(true);
-
     try {
       const res = await fetch('http://localhost:5000/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({
+          email: formData.email.trim(),
+          password: formData.password,
+        }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || 'Giriş yapılamadı.');
-        if (data.statusCode) setErrorCode(data.statusCode);
+        setError(data.error || 'Giriş yapılamadı. Bilgilerinizi kontrol edin.');
       } else {
-        onLoginSuccess(data.user, data.token);
-        if (data.user.role === 'admin' || data.user.role === 'moderator') {
-          navigate('/yonetim/kullanicilar');
+        // Oturum bilgilerini kaydet
+        onLoginSuccess(data.token, data.user);
+        
+        // Rol bazlı yönlendirme (Görev 03 kuralı)
+        if (data.user.role === 'admin') {
+          navigate('/admin');
         } else {
           navigate('/');
         }
       }
     } catch (err) {
-      setError('Sunucuya erişilemiyor. Lütfen sunucunun açık olduğundan emin olun.');
+      setError('Sunucu bağlantısı kurulamadı. Lütfen sunucunun çalıştığından emin olun.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={styles.pageWrapper}>
-      <AuthNavbar />
+    <div style={styles.page}>
+      <Navbar user={user} onLogout={onLogout} />
 
-      <main style={styles.mainArea}>
+      <main style={styles.main}>
         <div style={styles.card}>
+          
           <div style={styles.header}>
-            <h1 style={styles.title}>Tekrar hoş geldiniz.</h1>
+            <h1 style={styles.title}>Giriş Yap</h1>
             <p style={styles.subtitle}>
-              <span style={{ color: '#0369a1', fontWeight: '600' }}>Şifahane</span> kurumsal hesabınızla güvenli giriş yapın.
+              Personel hesabınızla giriş yaparak ilanları yönetebilirsiniz.
             </p>
           </div>
 
-          {error && (
-            <div style={errorCode === 'ACCOUNT_PENDING' ? styles.warningAlert : styles.errorAlert}>
-              {errorCode === 'ACCOUNT_PENDING' ? (
-                <Clock size={20} style={{ marginRight: 8, flexShrink: 0 }} />
-              ) : (
-                <AlertCircle size={20} style={{ marginRight: 8, flexShrink: 0 }} />
-              )}
-              <span>{error}</span>
-            </div>
-          )}
+          <form onSubmit={handleSubmit} noValidate>
+            
+            {/* Hata Mesajı (Hatalı şifre, onay bekliyor, askıda vb.) */}
+            {error && (
+              <div style={styles.errorAlert}>
+                <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{error}</span>
+              </div>
+            )}
 
-          <form onSubmit={handleSubmit} style={styles.form}>
-            {/* Kurumsal E-posta */}
+            {/* E-posta */}
             <div style={styles.formGroup}>
               <label style={styles.label}>Kurumsal E-posta</label>
-              <div style={styles.inputWrapper}>
-                <Mail size={18} color="#94a3b8" style={styles.inputIcon} />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="ad.soyad@hastane.com"
-                  className="auth-input"
-                  style={styles.input}
-                  autoComplete="username"
-                  required
-                />
-              </div>
+              <input
+                type="email"
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
+                placeholder="ad.soyad@hastane.gov.tr"
+                style={styles.input}
+              />
             </div>
 
-            {/* Şifre & Şifremi Unuttum */}
+            {/* Şifre */}
             <div style={styles.formGroup}>
               <div style={styles.labelRow}>
                 <label style={styles.label}>Şifre</label>
-                <Link to="/sifremi-unuttum" style={styles.forgotLink}>
-                  Şifremi unuttum?
-                </Link>
               </div>
-              <div style={styles.inputWrapper}>
-                <Lock size={18} color="#94a3b8" style={styles.inputIcon} />
+              <div style={styles.passwordWrapper}>
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="auth-input"
-                  style={styles.input}
-                  autoComplete="current-password"
-                  required
+                  name="password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  placeholder="Şifreniz"
+                  style={{ ...styles.input, paddingRight: '40px' }}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   style={styles.eyeBtn}
-                  aria-label="Şifreyi Göster/Gizle"
+                  tabIndex={-1}
                 >
                   {showPassword ? <EyeOff size={18} color="#64748b" /> : <Eye size={18} color="#64748b" />}
                 </button>
@@ -129,21 +128,32 @@ export default function LoginPage({ onLoginSuccess }) {
             <button
               type="submit"
               disabled={loading}
-              className="auth-button"
-              style={styles.submitBtn}
+              style={{
+                ...styles.btnSubmit,
+                opacity: loading ? 0.7 : 1,
+                cursor: loading ? 'not-allowed' : 'pointer',
+              }}
             >
-              <span>{loading ? 'Giriş Yapılıyor...' : 'Giriş Yap'}</span>
-              {!loading && <ArrowRight size={18} />}
+              {loading ? (
+                <>
+                  <Loader2 size={18} className="spin-animate" />
+                  <span>Giriş Yapılıyor...</span>
+                </>
+              ) : (
+                <span>Giriş Yap</span>
+              )}
             </button>
+
+            {/* Kayıt Ol Bağlantısı */}
+            <div style={styles.footerLink}>
+              Henüz hesabınız yok mu?{' '}
+              <Link to="/kayit" style={styles.linkBold}>
+                Hesap Oluştur
+              </Link>
+            </div>
+
           </form>
 
-          {/* Alt Bilgi */}
-          <div style={styles.footer}>
-            <span style={styles.footerText}>Henüz bir hesabınız yok mu? </span>
-            <Link to="/kayit" style={styles.registerLink}>
-              Kayıt olun
-            </Link>
-          </div>
         </div>
       </main>
     </div>
@@ -151,56 +161,45 @@ export default function LoginPage({ onLoginSuccess }) {
 }
 
 const styles = {
-  pageWrapper: {
+  page: {
     minHeight: '100vh',
-    backgroundColor: '#edf4fa',
+    backgroundColor: '#f4f6f9',
     display: 'flex',
     flexDirection: 'column',
   },
-  mainArea: {
+  main: {
     flex: 1,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '36px 16px',
-    boxSizing: 'border-box',
+    padding: '30px 16px',
   },
   card: {
     backgroundColor: '#ffffff',
-    borderRadius: '16px',
-    boxShadow: '0 12px 32px -4px rgba(15, 23, 42, 0.06)',
-    width: '100%',
-    maxWidth: '460px',
-    padding: '36px 36px',
+    borderRadius: '8px',
     border: '1px solid #e2e8f0',
-    boxSizing: 'border-box',
+    padding: '32px 28px',
+    width: '100%',
+    maxWidth: '440px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
   },
   header: {
-    marginBottom: '26px',
-    textAlign: 'left',
+    marginBottom: '24px',
+    textAlign: 'center',
   },
   title: {
-    fontSize: '28px',
-    fontWeight: '800',
-    color: '#0a2540',
+    fontSize: '22px',
+    fontWeight: '700',
+    color: '#0f172a',
     margin: '0 0 6px 0',
-    letterSpacing: '-0.5px',
   },
   subtitle: {
-    fontSize: '14px',
-    color: '#627d98',
+    fontSize: '13px',
+    color: '#64748b',
     margin: 0,
-    lineHeight: '1.5',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '18px',
   },
   formGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
+    marginBottom: '18px',
   },
   labelRow: {
     display: 'flex',
@@ -208,98 +207,75 @@ const styles = {
     alignItems: 'center',
   },
   label: {
+    display: 'block',
     fontSize: '13px',
     fontWeight: '600',
-    color: '#334e68',
+    color: '#334155',
+    marginBottom: '6px',
   },
-  forgotLink: {
-    fontSize: '12.5px',
-    color: '#0284c7',
-    textDecoration: 'none',
-    fontWeight: '600',
+  input: {
+    width: '100%',
+    padding: '10px 12px',
+    fontSize: '14px',
+    borderRadius: '6px',
+    border: '1px solid #cbd5e1',
+    outline: 'none',
+    boxSizing: 'border-box',
+    backgroundColor: '#ffffff',
+    color: '#1e293b',
   },
-  inputWrapper: {
+  passwordWrapper: {
     position: 'relative',
     display: 'flex',
     alignItems: 'center',
   },
-  inputIcon: {
-    position: 'absolute',
-    left: '12px',
-    pointerEvents: 'none',
-  },
-  input: {
-    width: '100%',
-    padding: '11px 40px 11px 38px',
-    borderRadius: '8px',
-    border: '1px solid #cbd5e1',
-    fontSize: '14px',
-    color: '#0f172a',
-    outline: 'none',
-    backgroundColor: '#ffffff',
-    transition: 'all 0.15s ease',
-    boxSizing: 'border-box',
-  },
   eyeBtn: {
     position: 'absolute',
-    right: '12px',
+    right: '10px',
     background: 'none',
     border: 'none',
     cursor: 'pointer',
-    padding: 0,
+    padding: '4px',
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  submitBtn: {
+  errorAlert: {
+    backgroundColor: '#fef2f2',
+    border: '1px solid #fecaca',
+    borderRadius: '6px',
+    padding: '12px 14px',
+    color: '#b91c1c',
+    fontSize: '13px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '18px',
+  },
+  btnSubmit: {
     width: '100%',
-    padding: '13px 20px',
     backgroundColor: '#004f8c',
     color: '#ffffff',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '6px',
+    padding: '12px',
     fontSize: '14px',
-    fontWeight: '600',
+    fontWeight: '700',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     gap: '8px',
-    marginTop: '6px',
-    transition: 'background-color 0.15s ease',
+    marginTop: '10px',
   },
-  footer: {
+  footerLink: {
     textAlign: 'center',
-    marginTop: '24px',
+    marginTop: '22px',
     fontSize: '13px',
+    color: '#64748b',
   },
-  footerText: {
-    color: '#627d98',
-  },
-  registerLink: {
-    color: '#0284c7',
+  linkBold: {
+    color: '#004f8c',
     fontWeight: '700',
-    textDecoration: 'none',
-  },
-  errorAlert: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '12px 14px',
-    borderRadius: '8px',
-    backgroundColor: '#fef2f2',
-    border: '1px solid #fecaca',
-    color: '#b91c1c',
-    fontSize: '13px',
-    marginBottom: '16px',
-  },
-  warningAlert: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '12px 14px',
-    borderRadius: '8px',
-    backgroundColor: '#fffbeb',
-    border: '1px solid #fde68a',
-    color: '#b45309',
-    fontSize: '13px',
-    marginBottom: '16px',
   },
 };
